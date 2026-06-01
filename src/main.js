@@ -97,22 +97,22 @@ app.innerHTML = `
             <div class="field"><label>Model</label><select id="model"><option>gpt-image-2</option><option>gpt-image-1.5</option><option>gpt-image-1</option><option>gpt-image-1-mini</option><option>doubao-seedream-4-0-250828</option><option value="custom">Custom...</option></select></div>
             <div id="customModelWrap" class="field hidden"><label>Custom model</label><input id="customModel"></div>
             <div class="grid-2">
-              <div class="field"><label>Size</label><select id="size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option><option>auto</option><option value="custom">custom</option></select></div>
-              <div class="field"><label>Quality</label><select id="quality"><option>low</option><option selected>medium</option><option>high</option><option>auto</option></select></div>
+              <div class="field"><label id="sizeLabel">Size</label><select id="size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option><option>auto</option><option value="custom">custom</option></select></div>
+              <div class="field"><label id="qualityLabel">Quality</label><select id="quality"><option>low</option><option selected>medium</option><option>high</option><option>auto</option></select></div>
             </div>
             <div id="customSizeWrap" class="grid-2 hidden">
               <div class="field"><label>Width</label><input id="customWidth" type="number" min="1" max="4096" value="1024"></div>
               <div class="field"><label>Height</label><input id="customHeight" type="number" min="1" max="4096" value="1024"></div>
             </div>
-            <div class="grid-2">
+            <div id="formatCountRow" class="grid-2">
               <div class="field"><label>Format</label><select id="outputFormat"><option>png</option><option>jpeg</option><option>webp</option></select></div>
               <div class="field"><label>n</label><input id="count" type="number" min="1" max="4" value="1"></div>
             </div>
-            <div class="grid-2">
+            <div id="backgroundCompressionRow" class="grid-2">
               <div class="field"><label>Background</label><select id="background"><option>auto</option><option>opaque</option><option>transparent</option></select></div>
               <div class="field"><label>Compression</label><input id="outputCompression" type="number" min="0" max="100" value="90"></div>
             </div>
-            <div class="field"><label>Input fidelity</label><select id="inputFidelity"><option value="">Default</option><option value="high">high</option></select></div>
+            <div id="inputFidelityRow" class="field"><label>Input fidelity</label><select id="inputFidelity"><option value="">Default</option><option value="high">high</option></select></div>
             <div class="field"><label>Extra JSON parameters</label><textarea id="extraJson" spellcheck="false" placeholder='{"moderation":"auto"}'></textarea></div>
             <div id="warnings" class="warning"></div>
           </div>
@@ -242,6 +242,8 @@ const els = {
   quality: $('quality'), outputFormat: $('outputFormat'), count: $('count'), background: $('background'),
   outputCompression: $('outputCompression'), inputFidelity: $('inputFidelity'), extraJson: $('extraJson'),
   prompt: $('prompt'), warnings: $('warnings'), endpointHint: $('endpointHint'), estimate: $('estimate'), sourceHint: $('sourceHint'),
+  sizeLabel: $('sizeLabel'), qualityLabel: $('qualityLabel'), formatCountRow: $('formatCountRow'),
+  backgroundCompressionRow: $('backgroundCompressionRow'), inputFidelityRow: $('inputFidelityRow'),
   sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
   makeMaskBtn: $('makeMaskBtn'), downloadMaskBtn: $('downloadMaskBtn'), maskImage: $('maskImage'), maskCanvas: $('maskCanvas'),
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
@@ -333,6 +335,7 @@ function stateForProvider() {
     outputCompression: els.outputCompression.value,
     background: els.background.value,
     inputFidelity: els.inputFidelity.value,
+    files: state.mode === 'generate' ? [] : state.files,
     extra,
   }
 }
@@ -350,21 +353,22 @@ function requestData() {
   const providerState = stateForProvider()
   const payload = provider.payload(providerState)
   const files = state.mode === 'mask' && state.files[0] ? [state.files[0]] : state.files
+  const isGemini = provider.protocol === 'gemini'
   return {
     provider: provider.id,
     method: 'POST',
     url: `${baseUrl()}${provider.endpoint(providerState)}`,
-    contentType: state.mode === 'generate' ? 'application/json' : 'multipart/form-data',
+    contentType: isGemini || state.mode === 'generate' ? 'application/json' : 'multipart/form-data',
     payload,
     files: state.mode === 'generate' ? [] : files.map((file, index) => ({
-      field: 'image',
+      field: isGemini ? 'inline_data' : 'image',
       index,
       name: file.name,
       width: file.width,
       height: file.height,
       bytes: file.bytes,
     })),
-    mask: state.mode === 'mask' ? maskSummary() : null,
+    mask: state.mode === 'mask' && !isGemini ? maskSummary() : null,
     validation: validate(false),
   }
 }
@@ -374,7 +378,7 @@ function compactResponse(value) {
   if (!value || typeof value !== 'object') return value
   const out = {}
   for (const [key, item] of Object.entries(value)) {
-    if (key === 'b64_json' && typeof item === 'string') {
+    if ((key === 'b64_json' || key === 'data') && typeof item === 'string' && item.length > 1000) {
       out[key] = `[base64 image omitted: ${item.length.toLocaleString()} chars]`
     } else {
       out[key] = compactResponse(item)
@@ -405,7 +409,9 @@ function maskSummary() {
 
 function warnings() {
   const items = []
-  if (els.provider.value !== 'openai-images') items.push('This adapter is request-preview only in this build. OpenAI-compatible Images can send live requests.')
+  const provider = currentProvider()
+  if (provider.protocol === 'gemini') items.push('Gemini uses generateContent JSON with inline_data and generationConfig.imageConfig. It does not use OpenAI background, compression, input_fidelity, or mask files.')
+  if (provider.protocol === 'gemini' && state.mode === 'mask') items.push('Gemini native image editing uses semantic masking in the prompt; alpha-mask upload is not supported here.')
   if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') items.push('gpt-image-2 does not support background=transparent.')
   if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') items.push('transparent background requires png or webp.')
   if (state.mode !== 'generate' && !state.files.length) items.push('Edit and Mask require at least one source image.')
@@ -422,7 +428,9 @@ function validate(show = true) {
   if (!els.prompt.value.trim()) addError('prompt', 'Prompt is empty.')
   const extraJson = parseExtraJson()
   if (extraJson.error) addError('extraJson', extraJson.error)
-  if (els.provider.value !== 'openai-images') addError('provider', 'This provider adapter is preview-only in this build.')
+  const provider = currentProvider()
+  if (!provider.supportsSend) addError('provider', 'This provider adapter is preview-only in this build.')
+  if (provider.protocol === 'gemini' && state.mode === 'mask') addError('maskCanvas', 'Gemini native does not accept alpha mask files. Use Edit with a semantic prompt.')
   if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
   if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
   if (!baseUrl()) addError('baseUrl', 'Base URL is empty.')
@@ -445,14 +453,48 @@ function validate(show = true) {
   return result
 }
 
+function setSelectOptions(select, options, fallback) {
+  const current = select.value
+  select.innerHTML = options.map((option) => {
+    const value = typeof option === 'string' ? option : option.value
+    const label = typeof option === 'string' ? option : option.label
+    return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`
+  }).join('')
+  if (options.some((option) => (typeof option === 'string' ? option : option.value) === current)) select.value = current
+  else select.value = fallback || (typeof options[0] === 'string' ? options[0] : options[0]?.value || '')
+  rebuildCustomSelect(select)
+}
+
+function applyProviderSchema() {
+  const provider = currentProvider()
+  if (els.provider.dataset.appliedProvider === provider.id) return
+  els.provider.dataset.appliedProvider = provider.id
+  if (provider.protocol === 'gemini') {
+    setSelectOptions(els.model, provider.modelOptions, 'gemini-2.5-flash-image')
+    setSelectOptions(els.size, provider.sizeOptions, '1:1')
+    setSelectOptions(els.quality, provider.qualityOptions, '1K')
+  } else {
+    setSelectOptions(els.model, provider.modelOptions || ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'custom'], 'gpt-image-2')
+    setSelectOptions(els.size, ['1024x1024', '1536x1024', '1024x1536', 'auto', 'custom'], '1024x1024')
+    setSelectOptions(els.quality, ['low', 'medium', 'high', 'auto'], 'medium')
+  }
+}
+
 function render() {
+  applyProviderSchema()
+  const provider = currentProvider()
   els.customModelWrap.classList.toggle('hidden', els.model.value !== 'custom')
-  els.customSizeWrap.classList.toggle('hidden', els.size.value !== 'custom')
-  els.maskCard.classList.toggle('show', state.mode === 'mask')
+  els.customSizeWrap.classList.toggle('hidden', provider.protocol === 'gemini' || els.size.value !== 'custom')
+  els.formatCountRow.classList.toggle('hidden', provider.protocol === 'gemini')
+  els.backgroundCompressionRow.classList.toggle('hidden', provider.protocol === 'gemini')
+  els.inputFidelityRow.classList.toggle('hidden', provider.protocol === 'gemini')
+  els.sizeLabel.textContent = provider.protocol === 'gemini' ? 'Aspect ratio' : 'Size'
+  els.qualityLabel.textContent = provider.protocol === 'gemini' ? 'Image size' : 'Quality'
+  els.maskCard.classList.toggle('show', state.mode === 'mask' && provider.supportsMask !== false)
   els.maskCard.classList.toggle('ready', state.maskReady || !!state.maskFile)
   els.makeMaskBtn.disabled = !state.files[0]
-  els.endpointHint.textContent = `POST ${currentProvider().endpoint(stateForProvider())}`
-  els.sourceHint.textContent = state.mode === 'generate' ? 'Optional for generate' : state.mode === 'mask' ? 'Upload source, generate mask, then paint' : 'Required for edit'
+  els.endpointHint.textContent = `POST ${provider.endpoint(stateForProvider())}`
+  els.sourceHint.textContent = state.mode === 'generate' ? 'Optional for generate' : provider.protocol === 'gemini' ? 'Gemini image inputs become inline_data parts' : state.mode === 'mask' ? 'Upload source, generate mask, then paint' : 'Required for edit'
   const warningItems = warnings()
   els.warnings.classList.toggle('show', warningItems.length > 0)
   els.warnings.innerHTML = warningItems.map((item) => `<div>${escapeHtml(item)}</div>`).join('')
@@ -465,6 +507,9 @@ function render() {
 
 function buildCurl() {
   const req = requestData()
+  if (currentProvider().protocol === 'gemini') {
+    return `curl ${quote(req.url)} \\\n  -H ${quote('x-goog-api-key: $API_KEY')} \\\n  -H ${quote('Content-Type: application/json')} \\\n  -d ${quote(JSON.stringify(req.payload, null, 2))}`
+  }
   if (state.mode === 'generate') {
     return `curl ${quote(req.url)} \\\n  -H ${quote('Authorization: Bearer $API_KEY')} \\\n  -H ${quote('Content-Type: application/json')} \\\n  -d ${quote(JSON.stringify(req.payload, null, 2))}`
   }
@@ -480,6 +525,8 @@ function quote(value) {
 }
 
 function estimateCost() {
+  const providerEstimate = currentProvider().estimateCost?.(stateForProvider())
+  if (providerEstimate != null) return providerEstimate
   const quality = els.quality.value === 'auto' ? 'medium' : els.quality.value
   const size = els.size.value === 'auto' || els.size.value === 'custom' ? '1024x1024' : els.size.value
   const table = {
@@ -506,6 +553,8 @@ const priceTable = {
 }
 
 function usageCost(body, model) {
+  const providerCost = currentProvider().usageCost?.(body, model)
+  if (providerCost) return providerCost
   const usage = body?.usage
   const prices = priceTable[model]
   if (!usage || !prices) return { label: 'usage not returned', value: null, usage: null }
@@ -1024,19 +1073,28 @@ async function loadImageModels() {
   const buttons = [document.querySelector('#testModelsBtn'), document.querySelector('#loadModelsBtn')].filter(Boolean)
   buttons.forEach((button) => setButtonBusy(button, true, 'Loading'))
   try {
-    setStatus('Loading /v1/models...', 'busy')
-    const response = await fetch(`${baseUrl()}/v1/models`, { headers: { Authorization: `Bearer ${document.querySelector('#apiKey').value.trim()}` } })
+    const provider = currentProvider()
+    const modelsPath = provider.protocol === 'gemini' ? '/v1beta/models' : '/v1/models'
+    setStatus(`Loading ${modelsPath}...`, 'busy')
+    const headers = provider.protocol === 'gemini'
+      ? { 'x-goog-api-key': document.querySelector('#apiKey').value.trim() }
+      : { Authorization: `Bearer ${document.querySelector('#apiKey').value.trim()}` }
+    const response = await fetch(`${baseUrl()}${modelsPath}`, { headers })
     const body = await response.json()
     if (!response.ok) throw new Error(body?.error?.message || `HTTP ${response.status}`)
     const current = activeModel()
-    const ids = Array.from(new Set((body.data || []).filter((model) => {
+    const modelItems = provider.protocol === 'gemini'
+      ? (body.models || []).map((model) => ({ id: String(model.name || '').replace(/^models\//, ''), raw: model }))
+      : (body.data || []).map((model) => ({ id: model.id, raw: model }))
+    const ids = Array.from(new Set(modelItems.filter((model) => {
       const text = JSON.stringify(model).toLowerCase()
       return model.id && (text.includes('image') || text.includes('图像') || text.includes('绘画') || text.includes('gemini') || text.includes('banana'))
     }).map((model) => model.id)))
-    els.model.innerHTML = [...new Set(['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', ...ids])].map((id) => `<option>${escapeHtml(id)}</option>`).join('') + '<option value="custom">Custom...</option>'
+    const defaults = provider.modelOptions?.filter((id) => id !== 'custom') || []
+    els.model.innerHTML = [...new Set([...defaults, ...ids])].map((id) => `<option>${escapeHtml(id)}</option>`).join('') + '<option value="custom">Custom...</option>'
     if ([...els.model.options].some((option) => option.value === current)) els.model.value = current
     rebuildCustomSelect(els.model)
-    setStatus(`/v1/models OK · ${ids.length} image-like models`, 'ok')
+    setStatus(`${modelsPath} OK · ${ids.length} image-like models`, 'ok')
     setResponseBody(body)
     switchTab('response')
     render()

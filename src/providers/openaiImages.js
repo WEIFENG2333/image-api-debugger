@@ -1,7 +1,10 @@
 export const openAiImagesProvider = {
   id: 'openai-images',
   label: 'OpenAI-compatible Images',
+  protocol: 'openai-images',
   supportsSend: true,
+  supportsMask: true,
+  modelOptions: ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'doubao-seedream-4-0-250828', 'custom'],
   endpoint(state) {
     return state.mode === 'generate' ? '/v1/images/generations' : '/v1/images/edits'
   },

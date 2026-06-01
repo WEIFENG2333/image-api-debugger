@@ -123,11 +123,20 @@ export async function alphaMaskFromPaintCanvas(canvas, width, height) {
 }
 
 export function responseImages(body, outputFormat = 'png') {
-  return (body?.data || []).map((item) => {
+  const openAiImages = (body?.data || []).map((item) => {
     if (item.b64_json) return `data:image/${outputFormat};base64,${item.b64_json}`
     if (item.url) return item.url
     return ''
   }).filter(Boolean)
+  const geminiImages = (body?.candidates || []).flatMap((candidate) => {
+    return (candidate?.content?.parts || []).map((part) => {
+      const inline = part.inlineData || part.inline_data
+      if (!inline?.data) return ''
+      const mime = inline.mimeType || inline.mime_type || 'image/png'
+      return `data:${mime};base64,${inline.data}`
+    })
+  }).filter(Boolean)
+  return [...openAiImages, ...geminiImages]
 }
 
 export async function imageThumbnail(url, maxSize = 180) {

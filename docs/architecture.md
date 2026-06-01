@@ -13,7 +13,7 @@ Image API Debugger is a static Vite app with provider adapters. The app is inten
 ## Source Layout
 
 - `src/main.js` owns UI state, rendering, event binding, request execution, and validation.
-- `src/providers/` contains API adapters. Each adapter exposes `id`, `label`, `supportsSend`, `endpoint(state)`, `payload(state)`, and optionally `send(context)`.
+- `src/providers/` contains API adapters. Each adapter exposes protocol metadata, UI option schema, request builders, transport, response usage parsing, and optional estimates.
 - `src/lib/images.js` contains browser image utilities, response image extraction, and mask normalization.
 - `src/lib/storage.js` contains localStorage workspace config and IndexedDB run history.
 - `src/styles.css` is the app-level design system and responsive layout.
@@ -24,14 +24,27 @@ Image API Debugger is a static Vite app with provider adapters. The app is inten
 export const provider = {
   id: 'provider-id',
   label: 'Provider label',
+  protocol: 'provider-protocol',
   supportsSend: true,
+  supportsMask: false,
+  modelOptions: [],
+  sizeOptions: [],
+  qualityOptions: [],
   endpoint(state) {},
   payload(state) {},
   async send(context) {},
+  estimateCost(state) {},
+  usageCost(body, model) {},
 }
 ```
 
-Adapters should keep provider-specific request shape in `payload` and transport details in `send`. This keeps Gemini, Nano-Banana, and OpenAI-compatible image providers isolated from UI state.
+Adapters should keep provider-specific request shape in `payload`, auth and HTTP details in `send`, response accounting in `usageCost`, and UI options in schema fields. This keeps Gemini native `generateContent` JSON separate from OpenAI-compatible image generation/edit multipart requests.
+
+## Provider Notes
+
+- OpenAI-compatible Images uses `/v1/images/generations` for generation and `/v1/images/edits` for edit/mask. Edit and mask requests are multipart form data.
+- Gemini native uses `/v1beta/models/{model}:generateContent`. Text-to-image is a text part; image editing is text plus `inline_data` image parts. Gemini does not accept OpenAI-style alpha mask files in this adapter.
+- Gemini image configuration uses `generationConfig.imageConfig` with `aspectRatio` and `imageSize`, based on the current REST discovery schema and verified requests.
 
 ## Mask Rules
 
