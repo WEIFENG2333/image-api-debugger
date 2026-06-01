@@ -30,6 +30,10 @@ const icons = {
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><rect x="4" y="4" width="11" height="11" rx="2"/></svg>',
   mask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4-8 12-8 16 0"/><path d="M7 14c1.2 2 2.8 3 5 3s3.8-1 5-3"/><path d="M9 14h.01"/><path d="M15 14h.01"/></svg>',
   download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+  zoom: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
+  minus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>',
 }
 
 function setButtonBusy(button, busy, label = '') {
@@ -178,13 +182,34 @@ app.innerHTML = `
             <button class="tab" data-tab="curl">cURL</button>
           </div>
           <div id="requestTab" class="tab-body"><div class="copy-row"><button class="icon-btn" title="Copy JSON" aria-label="Copy JSON" data-copy="requestPreview">${icons.copy}</button></div><pre id="requestPreview">{}</pre></div>
-          <div id="responseTab" class="tab-body hidden"><div class="copy-row"><button class="icon-btn" title="Copy response" aria-label="Copy response" data-copy="responsePreview">${icons.copy}</button></div><pre id="responsePreview">{}</pre></div>
+          <div id="responseTab" class="tab-body response-body hidden">
+            <div id="resultStage" class="result-stage empty">
+              <div>No image yet</div>
+            </div>
+            <div id="proofs" class="proofs"></div>
+            <details class="raw-panel">
+              <summary><span>Raw response</span><button class="icon-btn" title="Copy response" aria-label="Copy response" data-copy="responsePreview">${icons.copy}</button></summary>
+              <pre id="responsePreview">{}</pre>
+            </details>
+          </div>
           <div id="historyTab" class="tab-body hidden"><div id="historyList" class="history"></div></div>
           <div id="curlTab" class="tab-body hidden"><div class="copy-row"><button class="icon-btn" title="Copy cURL" aria-label="Copy cURL" data-copy="curlPreview">${icons.copy}</button></div><pre id="curlPreview"></pre></div>
-          <div id="proofs" class="proofs"></div>
         </section>
       </section>
     </main>
+    <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">
+      <div class="lightbox-bar">
+        <div id="lightboxMeta" class="lightbox-meta">Preview</div>
+        <div class="lightbox-actions">
+          <button id="fitImageBtn" class="btn subtle">Fit</button>
+          <button id="actualImageBtn" class="btn subtle">100%</button>
+          <button id="zoomOutBtn" class="icon-btn" title="Zoom out" aria-label="Zoom out">${icons.minus}</button>
+          <button id="zoomInBtn" class="icon-btn" title="Zoom in" aria-label="Zoom in">${icons.plus}</button>
+          <button id="closeLightboxBtn" class="icon-btn" title="Close preview" aria-label="Close preview">${icons.close}</button>
+        </div>
+      </div>
+      <div id="lightboxViewport" class="lightbox-viewport"><img id="lightboxImage" alt="Large preview"></div>
+    </div>
   </div>
 `
 
@@ -201,7 +226,8 @@ const els = {
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
   paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), fillBtn: $('fillBtn'), clearMaskBtn: $('clearMaskBtn'),
   brushSize: $('brushSize'), brushNumber: $('brushNumber'), requestPreview: $('requestPreview'), responsePreview: $('responsePreview'),
-  curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'),
+  curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'),
+  lightbox: $('lightbox'), lightboxImage: $('lightboxImage'), lightboxMeta: $('lightboxMeta'), lightboxViewport: $('lightboxViewport'),
 }
 
 function setStatus(text, type = '') {
@@ -544,11 +570,40 @@ async function sendRequest() {
 }
 
 function renderProofs(images) {
-  els.proofs.innerHTML = images.map((url, index) => `<div class="proof"><img src="${url}" alt="result ${index + 1}"><a href="${url}" download="image-result-${index + 1}.png">Download</a></div>`).join('')
+  if (!images.length) {
+    els.resultStage.className = 'result-stage empty'
+    els.resultStage.innerHTML = '<div>No image yet</div>'
+    els.proofs.innerHTML = ''
+    return
+  }
+  els.resultStage.className = `result-stage count-${Math.min(images.length, 4)}`
+  els.resultStage.innerHTML = images.map((url, index) => `
+    <button class="result-image" data-preview-index="${index}" title="Open large preview">
+      <img src="${url}" alt="result ${index + 1}">
+      <span>${icons.zoom}</span>
+    </button>
+  `).join('')
+  els.proofs.innerHTML = images.map((url, index) => `
+    <button class="proof ${index === 0 ? 'active' : ''}" data-preview-index="${index}" title="Open result ${index + 1}">
+      <img src="${url}" alt="result thumbnail ${index + 1}">
+      <span>#${index + 1}</span>
+    </button>
+  `).join('')
 }
 
 function renderHistory() {
-  els.historyList.innerHTML = state.runs.map((run) => `<button class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}"><strong>${run.ok ? 'OK' : 'ERR'} ${run.status} · ${escapeHtml(run.request.payload.model || run.request.provider)}</strong><span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s</span><span>${escapeHtml(run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '').slice(0, 140)}</span></button>`).join('')
+  els.historyList.innerHTML = state.runs.map((run) => {
+    const thumb = run.images?.[0] ? `<img src="${run.images[0]}" alt="history result">` : `<span class="history-placeholder">${run.ok ? 'OK' : 'ERR'}</span>`
+    const more = run.images?.length > 1 ? `<em>+${run.images.length - 1}</em>` : ''
+    return `<button class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}">
+      <span class="history-thumb">${thumb}${more}</span>
+      <span class="history-copy">
+        <strong>${run.ok ? 'OK' : 'ERR'} ${run.status} · ${escapeHtml(run.request.payload.model || run.request.provider)}</strong>
+        <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s</span>
+        <span>${escapeHtml(run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '').slice(0, 140)}</span>
+      </span>
+    </button>`
+  }).join('')
   els.historyList.querySelectorAll('[data-id]').forEach((button) => button.addEventListener('click', () => restoreRun(Number(button.dataset.id))))
 }
 
@@ -559,6 +614,47 @@ function restoreRun(id) {
   renderProofs(run.images || [])
   switchTab('response')
   setStatus('History restored. Re-upload source images before resending edit/mask requests.', 'ok')
+}
+
+function openLightbox(images, index = 0) {
+  if (!images.length) return
+  const url = images[index] || images[0]
+  els.lightbox.dataset.zoom = 'fit'
+  els.lightbox.dataset.index = String(index)
+  els.lightboxImage.src = url
+  els.lightboxImage.style.width = ''
+  els.lightboxImage.style.maxWidth = ''
+  els.lightboxImage.style.maxHeight = ''
+  els.lightboxImage.className = 'fit'
+  els.lightboxMeta.textContent = `Image ${index + 1} of ${images.length}`
+  els.lightbox.classList.remove('hidden')
+  document.body.classList.add('modal-open')
+}
+
+function closeLightbox() {
+  els.lightbox.classList.add('hidden')
+  els.lightboxImage.removeAttribute('src')
+  document.body.classList.remove('modal-open')
+}
+
+function setLightboxZoom(mode) {
+  const current = Number(els.lightbox.dataset.scale || '1')
+  let scale = current
+  if (mode === 'fit') {
+    els.lightbox.dataset.zoom = 'fit'
+    els.lightbox.dataset.scale = '1'
+    els.lightboxImage.className = 'fit'
+    els.lightboxImage.style.width = ''
+    return
+  }
+  if (mode === 'actual') scale = 1
+  if (mode === 'in') scale = Math.min(4, current + .25)
+  if (mode === 'out') scale = Math.max(.25, current - .25)
+  els.lightbox.dataset.zoom = 'scale'
+  els.lightbox.dataset.scale = String(scale)
+  els.lightboxImage.className = 'scaled'
+  const naturalWidth = els.lightboxImage.naturalWidth || 1200
+  els.lightboxImage.style.width = `${Math.round(naturalWidth * scale)}px`
 }
 
 function switchTab(tab) {
@@ -735,7 +831,8 @@ function bind() {
     render()
   }))
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
-  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async () => {
+  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
+    event.stopPropagation()
     await navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent)
     flashButton(button)
     setStatus('Copied', 'ok')
@@ -801,6 +898,29 @@ function bind() {
     setButtonBusy(button, false)
     flashButton(button)
     setStatus('History cleared', 'ok')
+  })
+  els.resultStage.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-preview-index]')
+    if (!button) return
+    const images = Array.from(els.resultStage.querySelectorAll('.result-image img')).map((img) => img.src)
+    openLightbox(images, Number(button.dataset.previewIndex))
+  })
+  els.proofs.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-preview-index]')
+    if (!button) return
+    const images = Array.from(els.resultStage.querySelectorAll('.result-image img')).map((img) => img.src)
+    openLightbox(images, Number(button.dataset.previewIndex))
+  })
+  document.querySelector('#closeLightboxBtn').addEventListener('click', closeLightbox)
+  document.querySelector('#fitImageBtn').addEventListener('click', () => setLightboxZoom('fit'))
+  document.querySelector('#actualImageBtn').addEventListener('click', () => setLightboxZoom('actual'))
+  document.querySelector('#zoomInBtn').addEventListener('click', () => setLightboxZoom('in'))
+  document.querySelector('#zoomOutBtn').addEventListener('click', () => setLightboxZoom('out'))
+  els.lightbox.addEventListener('click', (event) => {
+    if (event.target === els.lightbox || event.target === els.lightboxViewport) closeLightbox()
+  })
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.lightbox.classList.contains('hidden')) closeLightbox()
   })
   for (const element of document.querySelectorAll('input, select, textarea')) element.addEventListener('input', render)
 }
