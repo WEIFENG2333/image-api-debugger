@@ -91,8 +91,7 @@ app.innerHTML = `
           </div>
           <div class="card-body">
             <div class="field"><label>Base URL</label><input id="baseUrl" value="https://api.videocaptioner.cn"></div>
-            <div id="apiKeyField" class="field"><label>API key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
-            <div id="codexAuthField" class="field hidden"><label>Codex auth JSON</label><textarea id="codexAuthJson" spellcheck="false" placeholder='Paste ~/.codex/auth.json or CLIProxyAPI codex auth JSON'></textarea></div>
+            <div class="field"><label>API key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
             <div id="connectionDetail" class="connection-detail">Connection has not been tested.</div>
             <div class="icon-row">
               <button id="saveWorkspaceBtn" class="btn subtle">${icons.save}<span>Save workspace</span></button>
@@ -259,8 +258,7 @@ app.innerHTML = `
 
 const $ = (id) => document.getElementById(id)
 const els = {
-  statusDot: $('statusDot'), statusText: $('statusText'), baseUrl: $('baseUrl'), apiKey: $('apiKey'), apiKeyField: $('apiKeyField'),
-  codexAuthJson: $('codexAuthJson'), codexAuthField: $('codexAuthField'),
+  statusDot: $('statusDot'), statusText: $('statusText'), baseUrl: $('baseUrl'), apiKey: $('apiKey'),
   provider: $('provider'), model: $('model'), customModel: $('customModel'), customModelWrap: $('customModelWrap'),
   size: $('size'), customSizeWrap: $('customSizeWrap'), customWidth: $('customWidth'), customHeight: $('customHeight'),
   quality: $('quality'), outputFormat: $('outputFormat'), count: $('count'), background: $('background'),
@@ -303,7 +301,6 @@ function connectionFor(providerId = els.provider.value) {
   return state.connections[providerId] || {
     baseUrl: provider.defaultBaseUrl || '',
     apiKey: '',
-    codexAuthJson: '',
     status: 'idle',
     message: 'Connection has not been tested.',
     testedAt: '',
@@ -317,7 +314,6 @@ function saveCurrentConnection() {
     ...current,
     baseUrl: els.baseUrl.value,
     apiKey: els.apiKey.value,
-    codexAuthJson: els.codexAuthJson.value,
   }
 }
 
@@ -325,7 +321,6 @@ function applyConnection(providerId = els.provider.value) {
   const connection = connectionFor(providerId)
   els.baseUrl.value = connection.baseUrl
   els.apiKey.value = connection.apiKey
-  els.codexAuthJson.value = connection.codexAuthJson || ''
   renderConnectionStatus()
 }
 
@@ -335,7 +330,6 @@ function setConnectionStatus(status, message) {
     ...connectionFor(providerId),
     baseUrl: els.baseUrl.value,
     apiKey: els.apiKey.value,
-    codexAuthJson: els.codexAuthJson.value,
     status,
     message,
     testedAt: new Date().toISOString(),
@@ -362,13 +356,6 @@ function classifyError(error, provider = currentProvider()) {
       title: `API error${error?.status ? ` · HTTP ${error.status}` : ''}`,
       message,
       diagnosis: 'Diagnosis: this Base URL is a proxy without a Gemini image distributor. Use the official Gemini Base URL or configure the proxy channel.',
-    }
-  }
-  if (provider.protocol === 'codex-direct' && /Failed to fetch|CORS|NetworkError/i.test(message)) {
-    return {
-      title: 'Browser blocked request',
-      message,
-      diagnosis: 'Diagnosis: chatgpt.com does not allow this browser origin for Codex API requests. The app can build/refresh the request logic, but direct sending requires an upstream CORS policy change or a non-browser runtime.',
     }
   }
   if (/API key|permission|PERMISSION_DENIED|401|403/i.test(message)) {
@@ -469,15 +456,14 @@ function requestData() {
   const payload = provider.payload(providerState)
   const files = state.mode === 'mask' && state.files[0] ? [state.files[0]] : state.files
   const isGemini = provider.protocol === 'gemini'
-  const isCodexDirect = provider.protocol === 'codex-direct'
   return {
     provider: provider.id,
     method: 'POST',
     url: `${baseUrl()}${provider.endpoint(providerState)}`,
-    contentType: isGemini || isCodexDirect || state.mode === 'generate' ? 'application/json' : 'multipart/form-data',
+    contentType: isGemini || state.mode === 'generate' ? 'application/json' : 'multipart/form-data',
     payload,
     files: state.mode === 'generate' ? [] : files.map((file, index) => ({
-      field: isGemini ? 'inline_data' : isCodexDirect ? 'input_image' : 'image',
+      field: isGemini ? 'inline_data' : 'image',
       index,
       name: file.name,
       width: file.width,
@@ -532,7 +518,6 @@ function maskSummary() {
 function warnings() {
   const items = []
   const provider = currentProvider()
-  if (provider.protocol === 'codex-direct') items.push('Codex Direct reproduces CLIProxyAPI request translation in the browser, but chatgpt.com may block direct browser sends with CORS.')
   if (provider.protocol === 'gemini' && state.mode === 'mask') items.push('Gemini native image editing uses semantic masking in the prompt; alpha-mask upload is not supported here.')
   if (provider.protocol !== 'gemini' && activeModel() === 'gpt-image-2' && els.background.value === 'transparent') items.push('gpt-image-2 does not support background=transparent.')
   if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') items.push('transparent background requires png or webp.')
@@ -556,14 +541,7 @@ function validate(show = true) {
   if (provider.protocol !== 'gemini' && activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
   if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
   if (!baseUrl()) addError('baseUrl', 'Base URL is empty.')
-  if (provider.usesCodexAuthJson) {
-    if (!els.codexAuthJson.value.trim()) addError('codexAuthJson', 'Codex auth JSON is empty.')
-    else {
-      try { JSON.parse(els.codexAuthJson.value) } catch { addError('codexAuthJson', 'Codex auth JSON is invalid.') }
-    }
-  } else if (!els.apiKey.value.trim()) {
-    addError('apiKey', 'API key is empty.')
-  }
+  if (!els.apiKey.value.trim()) addError('apiKey', 'API key is empty.')
   if (state.mode !== 'generate' && !state.files.length) addError('sourceInput', 'No source images selected.')
   if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) addError('maskCanvas', 'Mask mode requires a generated or imported mask.')
   const result = { ok: errors.length === 0, errors, warnings: warnings() }
@@ -635,8 +613,6 @@ function render() {
   els.formatCountRow.classList.toggle('single-field', provider.supportsCount === false)
   els.backgroundCompressionRow.classList.toggle('hidden', provider.protocol === 'gemini')
   els.inputFidelityRow.classList.toggle('hidden', provider.protocol === 'gemini')
-  els.apiKeyField.classList.toggle('hidden', !!provider.usesCodexAuthJson)
-  els.codexAuthField.classList.toggle('hidden', !provider.usesCodexAuthJson)
   els.sizeLabel.textContent = provider.protocol === 'gemini' ? 'Aspect ratio' : 'Size'
   els.qualityLabel.textContent = provider.protocol === 'gemini' ? 'Image size' : 'Quality'
   els.sourceCard.classList.toggle('hidden', state.mode === 'generate')
@@ -683,9 +659,6 @@ function buildCurl() {
   const req = requestData()
   if (currentProvider().protocol === 'gemini') {
     return `curl ${quote(req.url)} \\\n  -H ${quote('x-goog-api-key: $API_KEY')} \\\n  -H ${quote('Content-Type: application/json')} \\\n  -d ${quote(JSON.stringify(req.payload, null, 2))}`
-  }
-  if (currentProvider().protocol === 'codex-direct') {
-    return `curl ${quote(req.url)} \\\n  -H ${quote('Authorization: Bearer $CODEX_ACCESS_TOKEN')} \\\n  -H ${quote('Content-Type: application/json')} \\\n  -H ${quote('Accept: text/event-stream')} \\\n  -H ${quote('Originator: codex_cli_rs')} \\\n  -H ${quote('User-Agent: codex-tui/0.135.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.135.0)')} \\\n  -d ${quote(JSON.stringify(req.payload, null, 2))}`
   }
   if (state.mode === 'generate') {
     return `curl ${quote(req.url)} \\\n  -H ${quote('Authorization: Bearer $API_KEY')} \\\n  -H ${quote('Content-Type: application/json')} \\\n  -d ${quote(JSON.stringify(req.payload, null, 2))}`
@@ -1037,12 +1010,6 @@ async function sendRequest() {
     const response = await provider.send({
       baseUrl: baseUrl(),
       apiKey: document.querySelector('#apiKey').value.trim(),
-      codexAuthJson: els.codexAuthJson.value.trim(),
-      onCodexAuthUpdate: (updated) => {
-        els.codexAuthJson.value = updated
-        saveCurrentConnection()
-        scheduleWorkspaceSave()
-      },
       state: stateForProvider(),
       payload: request.payload,
       files: assets.files,
@@ -1277,17 +1244,9 @@ function loadWorkspace() {
     'openai-images': {
       baseUrl: config.baseUrl || providerById('openai-images').defaultBaseUrl || '',
       apiKey: config.apiKey || '',
-      codexAuthJson: '',
       status: 'idle',
       message: 'Connection has not been tested.',
     },
-  }
-  if (state.connections['codex-cliproxy'] && !state.connections['codex-direct']) {
-    state.connections['codex-direct'] = {
-      ...state.connections['codex-cliproxy'],
-      baseUrl: providerById('codex-direct').defaultBaseUrl || '',
-      apiKey: '',
-    }
   }
   for (const [key, value] of Object.entries(config)) {
     if (key === 'connections') continue
@@ -1314,7 +1273,6 @@ async function loadImageModels() {
     const modelsPath = provider.protocol === 'gemini' ? '/v1beta/models' : '/v1/models'
     setConnectionStatus('busy', `Checking ${modelsPath}...`)
     setStatus(`Loading ${modelsPath}...`, 'busy')
-    if (provider.protocol === 'codex-direct') throw new Error('Codex Direct has no browser-safe model list endpoint. Use gpt-image-2.')
     const headers = provider.protocol === 'gemini'
       ? { 'x-goog-api-key': document.querySelector('#apiKey').value.trim() }
       : { Authorization: `Bearer ${document.querySelector('#apiKey').value.trim()}` }
@@ -1613,13 +1571,13 @@ function bind() {
   })
   for (const element of document.querySelectorAll('input, select, textarea')) {
     element.addEventListener('input', () => {
-      if (element === els.baseUrl || element === els.apiKey || element === els.codexAuthJson) saveCurrentConnection()
+      if (element === els.baseUrl || element === els.apiKey) saveCurrentConnection()
       render()
       scheduleWorkspaceSave()
     })
     element.addEventListener('change', () => {
       if (element === els.provider) switchProvider(element.value)
-      if (element === els.baseUrl || element === els.apiKey || element === els.codexAuthJson) saveCurrentConnection()
+      if (element === els.baseUrl || element === els.apiKey) saveCurrentConnection()
       scheduleWorkspaceSave()
     })
   }
