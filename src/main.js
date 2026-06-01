@@ -17,6 +17,8 @@ const state = {
   customSelects: new Map(),
   rawResponseText: '{}',
   lastPoint: null,
+  workspaceSaveTimer: null,
+  hydratingWorkspace: false,
 }
 
 const icons = {
@@ -942,10 +944,10 @@ function switchTab(tab) {
   for (const name of ['request', 'response', 'history', 'curl']) document.querySelector(`#${name}Tab`).classList.toggle('hidden', name !== tab)
 }
 
-function saveWorkspace() {
-  saveConfig({
-    baseUrl: document.querySelector('#baseUrl').value,
-    apiKey: document.querySelector('#apiKey').value,
+function workspaceConfig() {
+  return {
+    baseUrl: els.baseUrl.value,
+    apiKey: els.apiKey.value,
     provider: els.provider.value,
     model: els.model.value,
     customModel: els.customModel.value,
@@ -958,17 +960,62 @@ function saveWorkspace() {
     background: els.background.value,
     outputCompression: els.outputCompression.value,
     inputFidelity: els.inputFidelity.value,
-  })
+    prompt: els.prompt.value,
+    extraJson: els.extraJson.value,
+    mode: state.mode,
+    brushSize: els.brushSize.value,
+    connectorCollapsed: document.querySelector('#connectorCard').classList.contains('collapsed'),
+  }
+}
+
+function persistWorkspace({ notify = false } = {}) {
+  saveConfig(workspaceConfig())
+  if (!notify) return
   setStatus('Workspace saved', 'ok')
   flashButton(document.querySelector('#saveWorkspaceBtn'))
 }
 
+function saveWorkspace() {
+  persistWorkspace({ notify: true })
+}
+
+function scheduleWorkspaceSave() {
+  if (state.hydratingWorkspace) return
+  clearTimeout(state.workspaceSaveTimer)
+  state.workspaceSaveTimer = window.setTimeout(() => persistWorkspace(), 180)
+}
+
+function applyMode(mode) {
+  if (!['generate', 'edit', 'mask'].includes(mode)) return
+  state.mode = mode
+  document.querySelectorAll('.mode').forEach((button) => button.classList.toggle('active', button.dataset.mode === state.mode))
+}
+
+function updateConnectorToggle() {
+  const card = document.querySelector('#connectorCard')
+  const expanded = !card.classList.contains('collapsed')
+  const button = document.querySelector('#toggleConnectorBtn')
+  button.innerHTML = expanded ? icons.chevronUp : icons.chevronDown
+  button.title = expanded ? 'Collapse connector' : 'Expand connector'
+  button.setAttribute('aria-label', button.title)
+}
+
 function loadWorkspace() {
   const config = loadConfig()
+  state.hydratingWorkspace = true
   for (const [key, value] of Object.entries(config)) {
     const element = document.querySelector(`#${key}`)
-    if (element) element.value = value
+    if (element && value !== undefined && value !== null) element.value = value
   }
+  applyMode(config.mode || state.mode)
+  if (config.brushSize) {
+    els.brushSize.value = config.brushSize
+    els.brushNumber.value = config.brushSize
+  }
+  const connector = document.querySelector('#connectorCard')
+  connector.classList.toggle('collapsed', config.connectorCollapsed !== false)
+  updateConnectorToggle()
+  state.hydratingWorkspace = false
 }
 
 async function loadImageModels() {
@@ -1124,10 +1171,10 @@ function handleSelectKeydown(event, select) {
 function bind() {
   enhanceSelects()
   document.querySelectorAll('.mode').forEach((button) => button.addEventListener('click', () => {
-    state.mode = button.dataset.mode
-    document.querySelectorAll('.mode').forEach((item) => item.classList.toggle('active', item === button))
+    applyMode(button.dataset.mode)
     flashButton(button)
     render()
+    scheduleWorkspaceSave()
     if (state.mode === 'mask' && state.files[0] && !state.maskReady) generateMaskCanvas({ silent: true })
   }))
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
@@ -1141,11 +1188,8 @@ function bind() {
   document.querySelector('#toggleConnectorBtn').addEventListener('click', () => {
     const card = document.querySelector('#connectorCard')
     card.classList.toggle('collapsed')
-    const expanded = !card.classList.contains('collapsed')
-    const button = document.querySelector('#toggleConnectorBtn')
-    button.innerHTML = expanded ? icons.chevronUp : icons.chevronDown
-    button.title = expanded ? 'Collapse connector' : 'Expand connector'
-    button.setAttribute('aria-label', button.title)
+    updateConnectorToggle()
+    scheduleWorkspaceSave()
   })
   document.querySelector('#sourceInput').addEventListener('change', (event) => loadSourceFiles(event.target.files))
   document.querySelector('#maskInput').addEventListener('change', (event) => {
@@ -1179,6 +1223,7 @@ function bind() {
     const next = Math.max(6, Math.min(180, Number(value) || 48))
     els.brushSize.value = String(next)
     els.brushNumber.value = String(next)
+    scheduleWorkspaceSave()
   }
   els.brushSize.addEventListener('input', () => setBrushSize(els.brushSize.value))
   els.brushNumber.addEventListener('input', () => setBrushSize(els.brushNumber.value))
@@ -1232,7 +1277,13 @@ function bind() {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !els.lightbox.classList.contains('hidden')) closeLightbox()
   })
-  for (const element of document.querySelectorAll('input, select, textarea')) element.addEventListener('input', render)
+  for (const element of document.querySelectorAll('input, select, textarea')) {
+    element.addEventListener('input', () => {
+      render()
+      scheduleWorkspaceSave()
+    })
+    element.addEventListener('change', scheduleWorkspaceSave)
+  }
 }
 
 function setMaskTool(tool) {
