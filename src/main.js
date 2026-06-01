@@ -1,6 +1,6 @@
 import './styles.css'
 import { providerById, providers } from './providers/index.js'
-import { alphaMaskFromPaintCanvas, imageMeta, imageThumbnails, resizeMaskFile, responseImages } from './lib/images.js'
+import { alphaMaskFromPaintCanvas, dataUrlFile, fileDataUrl, imageMeta, imageThumbnails, resizeMaskFile, responseImages } from './lib/images.js'
 import { clearRuns, listRuns, loadConfig, saveConfig, saveRun } from './lib/storage.js'
 
 const app = document.querySelector('#app')
@@ -16,6 +16,7 @@ const state = {
   controller: null,
   customSelects: new Map(),
   rawResponseText: '{}',
+  lastPoint: null,
 }
 
 const icons = {
@@ -31,6 +32,8 @@ const icons = {
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><rect x="4" y="4" width="11" height="11" rx="2"/></svg>',
   mask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4-8 12-8 16 0"/><path d="M7 14c1.2 2 2.8 3 5 3s3.8-1 5-3"/><path d="M9 14h.01"/><path d="M15 14h.01"/></svg>',
   download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+  brush: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6-9 9H5v-6Z"/><path d="m14 4 2-2 6 6-2 2"/></svg>',
+  eraser: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4-4 11-11 7 7-8 8Z"/><path d="m14 6 4 4"/><path d="M5 21h14"/></svg>',
   zoom: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>',
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
@@ -146,13 +149,18 @@ app.innerHTML = `
               <div class="metric"><span>API mask</span><strong id="apiMaskMetric">-</strong></div>
             </div>
             <div class="mask-tools">
-              <button id="paintBtn" class="tool active">Paint</button>
-              <button id="eraseBtn" class="tool">Erase</button>
-              <button id="fillBtn" class="tool">Fill</button>
-              <button id="clearMaskBtn" class="tool">Clear</button>
+              <button id="paintBtn" class="tool active">${icons.brush}<span>Paint</span></button>
+              <button id="eraseBtn" class="tool">${icons.eraser}<span>Erase</span></button>
+              <button id="clearMaskBtn" class="tool">${icons.close}<span>Clear</span></button>
             </div>
-            <div class="range-line"><span>Brush</span><input id="brushSize" type="range" min="6" max="180" value="48"><input id="brushNumber" type="number" min="6" max="180" value="48"></div>
-            <div id="maskEmpty" class="mask-empty">Upload a source image, then generate a mask canvas. Paint the region to edit.</div>
+            <div class="brush-panel">
+              <span>Brush size</span>
+              <button id="brushDownBtn" class="icon-btn" title="Smaller brush" aria-label="Smaller brush">${icons.minus}</button>
+              <input id="brushSize" type="range" min="6" max="180" value="48">
+              <button id="brushUpBtn" class="icon-btn" title="Larger brush" aria-label="Larger brush">${icons.plus}</button>
+              <input id="brushNumber" type="number" min="6" max="180" value="48">
+            </div>
+            <div id="maskEmpty" class="mask-empty">Upload a source image. The mask canvas will appear automatically.</div>
             <div class="mask-stage"><div class="mask-stack"><img id="maskImage" alt=""><canvas id="maskCanvas"></canvas></div></div>
             <label class="file-zone compact">
               <input id="maskInput" type="file" accept="image/*">
@@ -231,8 +239,9 @@ const els = {
   sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
   makeMaskBtn: $('makeMaskBtn'), downloadMaskBtn: $('downloadMaskBtn'), maskImage: $('maskImage'), maskCanvas: $('maskCanvas'),
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
-  paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), fillBtn: $('fillBtn'), clearMaskBtn: $('clearMaskBtn'),
-  brushSize: $('brushSize'), brushNumber: $('brushNumber'), requestPreview: $('requestPreview'), responsePreview: $('responsePreview'),
+  paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), clearMaskBtn: $('clearMaskBtn'),
+  brushSize: $('brushSize'), brushNumber: $('brushNumber'), brushDownBtn: $('brushDownBtn'), brushUpBtn: $('brushUpBtn'),
+  requestPreview: $('requestPreview'), responsePreview: $('responsePreview'),
   curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'),
   lightbox: $('lightbox'), lightboxImage: $('lightboxImage'), lightboxMeta: $('lightboxMeta'), lightboxViewport: $('lightboxViewport'),
 }
@@ -423,6 +432,133 @@ function estimateCost() {
   return (table[size]?.[quality] || 0) * (Number(els.count.value) || 1)
 }
 
+const priceTable = {
+  'gpt-image-2': {
+    imageInput: 8, imageCachedInput: 2, imageOutput: 30,
+    textInput: 5, textCachedInput: 1.25, textOutput: 0,
+  },
+  'gpt-image-1.5': {
+    imageInput: 8, imageCachedInput: 2, imageOutput: 32,
+    textInput: 5, textCachedInput: 1.25, textOutput: 10,
+  },
+  'gpt-image-1-mini': {
+    imageInput: 2.5, imageCachedInput: .25, imageOutput: 8,
+    textInput: 2, textCachedInput: .2, textOutput: 0,
+  },
+}
+
+function usageCost(body, model) {
+  const usage = body?.usage
+  const prices = priceTable[model]
+  if (!usage || !prices) return { label: 'usage not returned', value: null, usage: null }
+  const inputDetails = usage.input_tokens_details || usage.input_details || {}
+  const outputDetails = usage.output_tokens_details || usage.output_details || {}
+  const imageInput = Number(inputDetails.image_tokens || usage.image_input_tokens || 0)
+  const imageCached = Number(inputDetails.cached_image_tokens || inputDetails.cached_tokens || 0)
+  const imageOutput = Number(outputDetails.image_tokens || usage.image_output_tokens || usage.output_image_tokens || 0)
+  const textInput = Number(inputDetails.text_tokens || usage.input_text_tokens || usage.prompt_tokens || usage.input_tokens || 0)
+  const textCached = Number(inputDetails.cached_text_tokens || 0)
+  const textOutput = Number(outputDetails.text_tokens || usage.output_text_tokens || usage.completion_tokens || 0)
+  const cost = (
+    Math.max(0, imageInput - imageCached) * prices.imageInput +
+    imageCached * prices.imageCachedInput +
+    imageOutput * prices.imageOutput +
+    Math.max(0, textInput - textCached) * prices.textInput +
+    textCached * prices.textCachedInput +
+    textOutput * prices.textOutput
+  ) / 1_000_000
+  return {
+    label: `$${cost.toFixed(6)}`,
+    value: cost,
+    usage: { imageInput, imageCached, imageOutput, textInput, textCached, textOutput },
+  }
+}
+
+function setCost(cost) {
+  els.estimate.textContent = cost?.value == null ? 'usage not returned' : cost.label
+}
+
+async function captureWorkspaceSnapshot() {
+  const sourceImages = await Promise.all(state.files.map(async (item) => ({
+    name: item.name,
+    type: item.file?.type || 'image/png',
+    width: item.width,
+    height: item.height,
+    bytes: item.bytes,
+    dataUrl: await fileDataUrl(item.file),
+  })))
+  let maskOverlay = null
+  if (state.maskReady && els.maskCanvas.width && els.maskCanvas.height) {
+    maskOverlay = els.maskCanvas.toDataURL('image/png')
+  }
+  let importedMask = null
+  if (state.maskFile) {
+    importedMask = { name: state.maskFile.name || 'mask.png', dataUrl: await fileDataUrl(state.maskFile) }
+  }
+  return {
+    state: stateForProvider(),
+    mode: state.mode,
+    brushSize: els.brushSize.value,
+    sourceImages,
+    maskReady: state.maskReady,
+    maskOverlay,
+    importedMask,
+  }
+}
+
+async function restoreWorkspaceSnapshot(snapshot) {
+  if (!snapshot) return false
+  const providerState = snapshot.state || {}
+  state.mode = snapshot.mode || providerState.mode || state.mode
+  document.querySelectorAll('.mode').forEach((button) => button.classList.toggle('active', button.dataset.mode === state.mode))
+  const assignments = {
+    provider: providerState.providerId,
+    model: providerState.model,
+    prompt: providerState.prompt,
+    size: providerState.size,
+    quality: providerState.quality,
+    count: providerState.count,
+    outputFormat: providerState.outputFormat,
+    outputCompression: providerState.outputCompression,
+    background: providerState.background,
+    inputFidelity: providerState.inputFidelity,
+  }
+  for (const [id, value] of Object.entries(assignments)) {
+    const el = document.querySelector(`#${id}`)
+    if (!el || value == null) continue
+    if (el.tagName === 'SELECT' && !Array.from(el.options).some((option) => option.value === String(value))) {
+      el.value = 'custom'
+      if (id === 'model') els.customModel.value = value
+    } else {
+      el.value = value
+    }
+  }
+  els.extraJson.value = providerState.extra && Object.keys(providerState.extra).length ? JSON.stringify(providerState.extra, null, 2) : els.extraJson.value
+  state.files.forEach((item) => item.url?.startsWith('blob:') && URL.revokeObjectURL(item.url))
+  const restoredFiles = await Promise.all((snapshot.sourceImages || []).map(async (item) => {
+    try {
+      const file = await dataUrlFile(item.dataUrl, item.name)
+      return imageMeta(file, item.dataUrl)
+    } catch {
+      return null
+    }
+  }))
+  state.files = restoredFiles.filter(Boolean)
+  state.maskFile = snapshot.importedMask ? await dataUrlFile(snapshot.importedMask.dataUrl, snapshot.importedMask.name) : null
+  state.maskReady = false
+  renderFiles()
+  render()
+  if (snapshot.maskOverlay && state.files[0]) {
+    await generateMaskCanvas({ silent: true, overlay: snapshot.maskOverlay })
+  } else if (state.mode === 'mask' && state.files[0]) {
+    await generateMaskCanvas({ silent: true })
+  }
+  els.brushSize.value = snapshot.brushSize || els.brushSize.value
+  els.brushNumber.value = els.brushSize.value
+  render()
+  return true
+}
+
 async function loadSourceFiles(files) {
   const zone = document.querySelector('#sourceInput')?.closest('.file-zone')
   zone?.classList.add('is-loading')
@@ -436,6 +572,7 @@ async function loadSourceFiles(files) {
   state.maskReady = false
   renderFiles()
   render()
+  if (state.mode === 'mask' && state.files[0]) await generateMaskCanvas({ silent: true })
 }
 
 function renderFiles() {
@@ -455,29 +592,47 @@ function renderFiles() {
   })
 }
 
-function generateMaskCanvas() {
+function generateMaskCanvas(options = {}) {
   const source = state.files[0]
   if (!source) {
     setStatus('Upload a source image first', 'err')
     return
   }
-  setButtonBusy(els.makeMaskBtn, true, 'Preparing')
-  els.maskImage.src = source.url
-  els.maskImage.onload = () => {
+  if (!options.silent) setButtonBusy(els.makeMaskBtn, true, 'Preparing')
+  return new Promise((resolve) => {
+    els.maskImage.onload = async () => {
     els.maskCanvas.width = source.width
     els.maskCanvas.height = source.height
     clearMask()
+    if (options.overlay) {
+      const overlay = new Image()
+      await new Promise((done) => {
+      overlay.onload = () => {
+        els.maskCanvas.getContext('2d').drawImage(overlay, 0, 0, source.width, source.height)
+        updateMaskMetrics()
+        done()
+      }
+      overlay.onerror = done
+      overlay.src = options.overlay
+      })
+    }
     state.maskReady = true
-    setStatus(`Mask canvas ${source.width}x${source.height} ready`, 'ok')
-    setButtonBusy(els.makeMaskBtn, false)
-    flashButton(els.makeMaskBtn)
+    if (!options.silent) {
+      setStatus(`Mask canvas ${source.width}x${source.height} ready`, 'ok')
+      setButtonBusy(els.makeMaskBtn, false)
+      flashButton(els.makeMaskBtn)
+    }
     render()
     requestAnimationFrame(syncCanvasSize)
+    resolve()
   }
   els.maskImage.onerror = () => {
-    setButtonBusy(els.makeMaskBtn, false)
+    if (!options.silent) setButtonBusy(els.makeMaskBtn, false)
     setStatus('Could not load source image for mask canvas', 'err')
+    resolve()
   }
+  els.maskImage.src = source.url
+  })
 }
 
 function syncCanvasSize() {
@@ -501,11 +656,22 @@ function paintMask(event) {
   const point = pointFromEvent(event)
   const ctx = els.maskCanvas.getContext('2d')
   ctx.globalCompositeOperation = state.maskTool === 'erase' ? 'destination-out' : 'source-over'
-  ctx.fillStyle = 'rgba(201,100,66,.5)'
+  ctx.strokeStyle = 'rgba(201,100,66,.55)'
+  ctx.fillStyle = 'rgba(201,100,66,.55)'
+  ctx.lineWidth = Number(els.brushSize.value)
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
   ctx.beginPath()
-  ctx.arc(point.x, point.y, Number(els.brushSize.value) / 2, 0, Math.PI * 2)
-  ctx.fill()
+  if (state.lastPoint) {
+    ctx.moveTo(state.lastPoint.x, state.lastPoint.y)
+    ctx.lineTo(point.x, point.y)
+    ctx.stroke()
+  } else {
+    ctx.arc(point.x, point.y, Number(els.brushSize.value) / 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
   ctx.globalCompositeOperation = 'source-over'
+  state.lastPoint = point
   updateMaskMetrics()
 }
 
@@ -574,10 +740,13 @@ async function sendRequest() {
     })
     const latency = Math.round(performance.now() - started)
     const images = responseImages(response.body, els.outputFormat.value)
+    const cost = usageCost(response.body, activeModel())
     setResponseBody(response.body)
+    setCost(cost)
     renderProofs(images)
     const thumbnails = await imageThumbnails(images)
-    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), images, thumbnails })
+    const snapshot = await captureWorkspaceSnapshot()
+    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), images, thumbnails, cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(`OK ${response.status} · ${(latency / 1000).toFixed(1)}s`, 'ok')
@@ -585,8 +754,11 @@ async function sendRequest() {
   } catch (error) {
     const latency = Math.round(performance.now() - started)
     const body = error.body || { error: { message: error.message || String(error) } }
+    const cost = usageCost(body, activeModel())
     setResponseBody(body)
-    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), images: [], thumbnails: [] })
+    setCost(cost)
+    const snapshot = await captureWorkspaceSnapshot()
+    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), images: [], thumbnails: [], cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(error.message || 'Request failed', 'err')
@@ -629,7 +801,7 @@ function renderHistory() {
       <span class="history-thumb">${thumb}${more}</span>
       <span class="history-copy">
         <strong>${run.ok ? 'OK' : 'ERR'} ${run.status} · ${escapeHtml(run.request.payload.model || run.request.provider)}</strong>
-        <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s</span>
+        <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s · ${escapeHtml(run.cost?.label || 'usage not returned')}</span>
         <span>${escapeHtml(run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '').slice(0, 140)}</span>
       </span>
     </button>`
@@ -637,13 +809,15 @@ function renderHistory() {
   els.historyList.querySelectorAll('[data-id]').forEach((button) => button.addEventListener('click', () => restoreRun(Number(button.dataset.id))))
 }
 
-function restoreRun(id) {
+async function restoreRun(id) {
   const run = state.runs.find((item) => item.id === id)
   if (!run) return
   setResponseBody(run.response, { copyFull: false })
   renderProofs(run.images || [])
   switchTab('response')
-  setStatus('History restored. Re-upload source images before resending edit/mask requests.', 'ok')
+  await restoreWorkspaceSnapshot(run.snapshot).catch(() => false)
+  setCost(run.cost || null)
+  setStatus('History restored', 'ok')
 }
 
 function openLightbox(images, index = 0) {
@@ -695,6 +869,7 @@ function switchTab(tab) {
 function saveWorkspace() {
   saveConfig({
     baseUrl: document.querySelector('#baseUrl').value,
+    apiKey: document.querySelector('#apiKey').value,
     provider: els.provider.value,
     model: els.model.value,
     customModel: els.customModel.value,
@@ -877,6 +1052,7 @@ function bind() {
     document.querySelectorAll('.mode').forEach((item) => item.classList.toggle('active', item === button))
     flashButton(button)
     render()
+    if (state.mode === 'mask' && state.files[0] && !state.maskReady) generateMaskCanvas({ silent: true })
   }))
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
   document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
@@ -922,14 +1098,23 @@ function bind() {
   })
   document.querySelector('#paintBtn').addEventListener('click', (event) => { setMaskTool('paint'); flashButton(event.currentTarget) })
   document.querySelector('#eraseBtn').addEventListener('click', (event) => { setMaskTool('erase'); flashButton(event.currentTarget) })
-  document.querySelector('#fillBtn').addEventListener('click', (event) => { fillMask(); flashButton(event.currentTarget) })
   document.querySelector('#clearMaskBtn').addEventListener('click', (event) => { clearMask(); flashButton(event.currentTarget) })
-  els.brushSize.addEventListener('input', () => { els.brushNumber.value = els.brushSize.value })
-  els.brushNumber.addEventListener('input', () => { els.brushSize.value = els.brushNumber.value })
+  const setBrushSize = (value) => {
+    const next = Math.max(6, Math.min(180, Number(value) || 48))
+    els.brushSize.value = String(next)
+    els.brushNumber.value = String(next)
+  }
+  els.brushSize.addEventListener('input', () => setBrushSize(els.brushSize.value))
+  els.brushNumber.addEventListener('input', () => setBrushSize(els.brushNumber.value))
+  els.brushDownBtn.addEventListener('click', () => setBrushSize(Number(els.brushSize.value) - 6))
+  els.brushUpBtn.addEventListener('click', () => setBrushSize(Number(els.brushSize.value) + 6))
   let drawing = false
-  els.maskCanvas.addEventListener('pointerdown', (event) => { drawing = true; els.maskCanvas.setPointerCapture(event.pointerId); paintMask(event) })
+  const stopDrawing = () => { drawing = false; state.lastPoint = null }
+  els.maskCanvas.addEventListener('pointerdown', (event) => { drawing = true; state.lastPoint = null; els.maskCanvas.setPointerCapture(event.pointerId); paintMask(event) })
   els.maskCanvas.addEventListener('pointermove', (event) => { if (drawing) paintMask(event) })
-  els.maskCanvas.addEventListener('pointerup', () => { drawing = false })
+  els.maskCanvas.addEventListener('pointerup', stopDrawing)
+  els.maskCanvas.addEventListener('pointercancel', stopDrawing)
+  els.maskCanvas.addEventListener('pointerleave', stopDrawing)
   window.addEventListener('resize', syncCanvasSize)
   document.querySelector('#validateBtn').addEventListener('click', (event) => { const result = validate(true); flashButton(event.currentTarget, result.ok ? 'done' : 'warn') })
   document.querySelector('#sendBtn').addEventListener('click', sendRequest)

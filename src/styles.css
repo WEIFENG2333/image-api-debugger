@@ -688,11 +688,15 @@ input:focus, select:focus, textarea:focus {
 
 .mask-tools {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 
 .tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -701,15 +705,20 @@ input:focus, select:focus, textarea:focus {
   font-weight: 680;
 }
 
+.tool svg {
+  width: 16px;
+  height: 16px;
+}
+
 .tool.active {
   border-color: var(--accent);
   background: #fff1eb;
   color: var(--accent-dark);
 }
 
-.range-line {
+.brush-panel {
   display: grid;
-  grid-template-columns: 64px 1fr 58px;
+  grid-template-columns: auto 32px 1fr 32px 58px;
   gap: 8px;
   align-items: center;
   color: var(--muted);
@@ -1159,9 +1168,10 @@ pre {
 @media (max-width: 680px) {
   .layout { padding: 8px; }
   .grid-2, .metrics { grid-template-columns: 1fr; }
-  .mask-tools { grid-template-columns: 1fr 1fr; }
-  .range-line { grid-template-columns: 1fr 58px; }
-  .range-line span { grid-column: 1 / -1; }
+  .mask-tools { grid-template-columns: 1fr; }
+  .brush-panel { grid-template-columns: 1fr 32px 32px 58px; }
+  .brush-panel span { grid-column: 1 / -1; }
+  .brush-panel input[type="range"] { grid-column: 1 / 2; }
   .mask-card .card-head { display: grid; grid-template-columns: 1fr; }
   .mask-card .head-actions { width: 100%; }
   .inspector-bar { align-items: start; }

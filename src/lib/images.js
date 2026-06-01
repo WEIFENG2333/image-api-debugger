@@ -42,6 +42,21 @@ export function canvasDataUrl(canvas, type = 'image/webp', quality = .76) {
   }
 }
 
+export function fileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(file)
+  })
+}
+
+export async function dataUrlFile(dataUrl, name = 'image.png') {
+  const response = await fetch(dataUrl)
+  const blob = await response.blob()
+  return new File([blob], name, { type: blob.type || 'image/png' })
+}
+
 export async function resizeMaskFile(file, width, height) {
   const url = URL.createObjectURL(file)
   try {
