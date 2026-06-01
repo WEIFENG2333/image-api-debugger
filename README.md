@@ -1,27 +1,16 @@
 # Image API Debugger
 
-A static, provider-oriented debugger for image generation and editing APIs.
+A browser debugger for image generation and editing APIs. It shows the exact request, response, headers, generated images, usage cost, and local history.
 
-## Goals
+## Use The App
 
-- Build and inspect requests without hiding details behind a toy demo UI.
-- Validate source image and mask dimensions before sending edit requests.
-- Persist request history locally with IndexedDB.
-- Support OpenAI-compatible Images API and Gemini native Nano Banana providers without mixing their protocols.
-- Support Codex OAuth image generation through CLIProxyAPI's OpenAI-compatible Images endpoint.
-- Deploy as a static GitHub Pages app.
+Open the hosted app:
 
-## Features
+```text
+https://bkfeng.top/image-api-debugger/
+```
 
-- Generate, edit, and mask request builder for OpenAI-compatible image endpoints.
-- Codex OAuth can be tested through the existing `GPT / OpenAI Images` provider by pointing Base URL at CLIProxyAPI.
-- Gemini native `generateContent` support for Nano Banana models, including text-to-image and text+image editing through `inline_data`.
-- Multiple source image upload for edit/mask requests.
-- Browser mask workflow: upload source image, generate same-size paint canvas, paint/erase/fill, export API mask.
-- Request JSON, cURL preview, raw response body, rendered image proofs, local run history.
-- Provider-specific request JSON, cURL, response image extraction, and usage-based cost calculation.
-
-## Run
+Or run locally:
 
 ```bash
 npm install
@@ -34,26 +23,98 @@ Open:
 http://127.0.0.1:8888
 ```
 
-## Codex Through CLIProxyAPI
+## Providers
 
-The frontend should not know Codex OAuth credentials. It only calls the OpenAI-compatible Images endpoints exposed by CLIProxyAPI:
+### GPT / OpenAI Images
+
+Use this for OpenAI-compatible image APIs, including CLIProxyAPI.
+
+```text
+Provider: GPT / OpenAI Images
+Base URL: https://api.example.com
+API key: your-api-key
+Model: gpt-image-2
+```
+
+Supported workflows:
+
+- Generate: `POST /v1/images/generations`
+- Edit and Mask: `POST /v1/images/edits`
+
+### Gemini
+
+Use this for Gemini native `generateContent` image models.
+
+```text
+Provider: Gemini
+Base URL: https://generativelanguage.googleapis.com
+API key: your Gemini API key
+Model: gemini-3.1-flash-image
+```
+
+## Codex via CLIProxyAPI
+
+For Codex image generation, do not put Codex OAuth credentials in this frontend. Run CLIProxyAPI locally, then connect this app to CLIProxyAPI through the normal `GPT / OpenAI Images` provider.
+
+In the app:
+
+```text
+Provider: GPT / OpenAI Images
+Base URL: http://127.0.0.1:8317
+API key: the key in CLIProxyAPI api-keys
+Model: gpt-image-2
+```
+
+CLIProxyAPI exposes OpenAI-compatible image endpoints:
 
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-CLIProxyAPI then translates those requests server-side into Codex `POST /backend-api/codex/responses` calls with an `image_generation` tool. That server-side layer owns the Codex OAuth refresh token, access token refresh, Codex headers, and Cloudflare-sensitive user agent behavior.
+It translates those requests server-side into Codex `POST /backend-api/codex/responses` calls with an `image_generation` tool. Token refresh, Codex OAuth credentials, and Codex-specific headers stay inside CLIProxyAPI.
 
-In this app, use the normal `GPT / OpenAI Images` provider:
+### Install CLIProxyAPI
 
-- Base URL: `http://127.0.0.1:18317`
-- API key: the value in CLIProxyAPI `api-keys`
-- Model: `gpt-image-2`
+Official quick start:
 
-Minimum local config:
+macOS:
+
+```bash
+brew install cliproxyapi
+brew services start cliproxyapi
+```
+
+Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/router-for-me/cliproxyapi-installer/refs/heads/master/cliproxyapi-installer | bash
+```
+
+Docker:
+
+```bash
+docker run --rm -p 8317:8317 \
+  -v /path/to/config.yaml:/CLIProxyAPI/config.yaml \
+  -v /path/to/auth-dir:/root/.cli-proxy-api \
+  eceasy/cli-proxy-api:latest
+```
+
+Windows: download the latest binary from GitHub Releases.
+
+### Minimal Config
+
+Create or edit the CLIProxyAPI config file.
+
+For Homebrew service, the default path is usually:
+
+```text
+/opt/homebrew/etc/cliproxyapi.conf
+```
+
+Minimal local config:
 
 ```yaml
 host: "127.0.0.1"
-port: 18317
+port: 8317
 auth-dir: "~/.cli-proxy-api"
 api-keys:
   - "local-dev-key"
@@ -63,21 +124,28 @@ codex-header-defaults:
   user-agent: "codex-tui/0.135.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.135.0)"
 ```
 
-Start CLIProxyAPI from the local clone:
+Then use this app with:
 
-```bash
-cd /path/to/CLIProxyAPI
-go run ./cmd/server -config /path/to/config.yaml
+```text
+Base URL: http://127.0.0.1:8317
+API key: local-dev-key
 ```
 
-Add Codex OAuth credentials in one of these ways:
+### Add Codex Login
+
+Fresh login through CLIProxyAPI:
 
 ```bash
-# Preferred when logging in fresh through CLIProxyAPI
+cliproxyapi -codex-login
+```
+
+If you installed from source, run:
+
+```bash
 go run ./cmd/server -config /path/to/config.yaml -codex-login
 ```
 
-Or convert an existing Codex CLI `~/.codex/auth.json` into CLIProxyAPI's auth-dir shape:
+If you already have `~/.codex/auth.json`, you can import it:
 
 ```bash
 mkdir -p ~/.cli-proxy-api
@@ -92,13 +160,22 @@ jq '{
 chmod 600 ~/.cli-proxy-api/codex-local.json
 ```
 
-The fixed `codex-header-defaults.user-agent` matters for browser use. Without it, CLIProxyAPI may forward the browser user agent to the Codex upstream and trigger a Cloudflare challenge page.
+## Why A Proxy Is Needed
 
-Direct browser calls to `https://chatgpt.com/backend-api/codex/responses` are not reliable because browsers enforce CORS and JavaScript cannot set `User-Agent`. Use CLIProxyAPI or another server-side proxy for actual requests.
+Direct browser calls to `https://chatgpt.com/backend-api/codex/responses` are blocked by browser CORS, and JavaScript cannot set `User-Agent`. CLIProxyAPI avoids this by running server-side and exposing browser-friendly OpenAI-compatible endpoints.
+
+## Features
+
+- Generate, edit, and mask request builder.
+- Multi-image upload for edit and mask requests.
+- Browser mask painter with same-size API mask export.
+- Request JSON, cURL, raw response, response headers, image preview, and history.
+- Local persistence with IndexedDB and browser storage.
+- Usage-based cost display when the API returns usage metadata.
 
 ## Security
 
-API keys stay in the current browser session field and are not committed to this repository. Workspace settings and run history are stored locally in the browser.
+API keys are stored only in your browser storage. Codex OAuth credentials should stay in CLIProxyAPI, not in this frontend.
 
 ## Architecture
 
