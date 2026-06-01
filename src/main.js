@@ -212,6 +212,10 @@ app.innerHTML = `
         </section>
       </section>
     </main>
+    <div id="toast" class="toast hidden" role="alert" aria-live="assertive">
+      <strong id="toastTitle">Check request</strong>
+      <span id="toastMessage"></span>
+    </div>
     <div id="lightbox" class="lightbox hidden" role="dialog" aria-modal="true" aria-label="Image preview">
       <div class="lightbox-bar">
         <div id="lightboxMeta" class="lightbox-meta">Preview</div>
@@ -244,11 +248,52 @@ const els = {
   requestPreview: $('requestPreview'), responsePreview: $('responsePreview'),
   curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'),
   lightbox: $('lightbox'), lightboxImage: $('lightboxImage'), lightboxMeta: $('lightboxMeta'), lightboxViewport: $('lightboxViewport'),
+  toast: $('toast'), toastTitle: $('toastTitle'), toastMessage: $('toastMessage'),
 }
 
 function setStatus(text, type = '') {
   els.statusText.textContent = text
   els.statusDot.className = `dot ${type}`.trim()
+}
+
+function showToast(title, message, type = 'err') {
+  els.toastTitle.textContent = title
+  els.toastMessage.textContent = message
+  els.toast.className = `toast ${type}`.trim()
+  window.clearTimeout(showToast.timer)
+  showToast.timer = window.setTimeout(() => els.toast.classList.add('hidden'), 5200)
+}
+
+function clearFieldErrors() {
+  document.querySelectorAll('.field.invalid, .file-zone.invalid, .card.invalid').forEach((el) => el.classList.remove('invalid'))
+  document.querySelectorAll('.field-error').forEach((el) => el.remove())
+}
+
+function fieldFor(id) {
+  const element = document.querySelector(`#${id}`)
+  return element?.closest('.field') || element?.closest('.card') || element
+}
+
+function markField(id, message) {
+  const field = fieldFor(id)
+  if (!field) return
+  field.classList.add('invalid')
+  const note = document.createElement('div')
+  note.className = 'field-error'
+  note.textContent = message
+  field.append(note)
+}
+
+function revealField(id) {
+  if (id === 'apiKey' || id === 'baseUrl') {
+    const connector = document.querySelector('#connectorCard')
+    if (connector?.classList.contains('collapsed')) document.querySelector('#toggleConnectorBtn').click()
+  }
+  const element = document.querySelector(`#${id}`)
+  window.setTimeout(() => {
+    element?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    element?.focus?.({ preventScroll: true })
+  }, 80)
 }
 
 function activeModel() {
@@ -366,22 +411,31 @@ function warnings() {
 }
 
 function validate(show = true) {
+  if (show) clearFieldErrors()
   const errors = []
-  if (!activeModel()) errors.push('Model is empty.')
-  if (!els.prompt.value.trim()) errors.push('Prompt is empty.')
+  const addError = (field, message) => errors.push({ field, message })
+  if (!activeModel()) addError('model', 'Model is empty.')
+  if (!els.prompt.value.trim()) addError('prompt', 'Prompt is empty.')
   const extraJson = parseExtraJson()
-  if (extraJson.error) errors.push(extraJson.error)
-  if (els.provider.value !== 'openai-images') errors.push('This provider adapter is preview-only in this build.')
-  if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') errors.push('gpt-image-2 does not support background=transparent.')
-  if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') errors.push('transparent background requires png or webp.')
-  if (!baseUrl()) errors.push('Base URL is empty.')
-  if (!els.apiKey.value.trim()) errors.push('API key is empty.')
-  if (state.mode !== 'generate' && !state.files.length) errors.push('No source images selected.')
-  if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) errors.push('Mask mode requires a generated or imported mask.')
+  if (extraJson.error) addError('extraJson', extraJson.error)
+  if (els.provider.value !== 'openai-images') addError('provider', 'This provider adapter is preview-only in this build.')
+  if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
+  if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
+  if (!baseUrl()) addError('baseUrl', 'Base URL is empty.')
+  if (!els.apiKey.value.trim()) addError('apiKey', 'API key is empty.')
+  if (state.mode !== 'generate' && !state.files.length) addError('sourceInput', 'No source images selected.')
+  if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) addError('maskCanvas', 'Mask mode requires a generated or imported mask.')
   const result = { ok: errors.length === 0, errors, warnings: warnings() }
   if (show) {
-    if (errors.length) setStatus(errors[0], 'err')
-    else if (result.warnings.length) setStatus(result.warnings[0], 'ok')
+    if (errors.length) {
+      errors.forEach((error) => markField(error.field, error.message))
+      setStatus(errors[0].message, 'err')
+      showToast('Request needs attention', errors[0].message, 'err')
+      revealField(errors[0].field)
+    } else if (result.warnings.length) {
+      setStatus(result.warnings[0], 'ok')
+      showToast('Heads up', result.warnings[0], 'warn')
+    }
     else setStatus('Validation passed', 'ok')
   }
   return result
@@ -712,16 +766,22 @@ async function apiMaskBlob() {
 
 async function sendRequest() {
   const check = validate(true)
-  if (!check.ok) return
+  const sendBtn = document.querySelector('#sendBtn')
+  if (!check.ok) {
+    flashButton(sendBtn, 'warn')
+    sendBtn.classList.add('shake')
+    window.setTimeout(() => sendBtn.classList.remove('shake'), 460)
+    return
+  }
   const provider = currentProvider()
   if (!provider.supportsSend) {
     setStatus('This provider adapter is preview-only in this build', 'err')
+    showToast('Cannot send', 'This provider adapter is preview-only in this build.', 'err')
     return
   }
 
   const request = requestData()
   const started = performance.now()
-  const sendBtn = document.querySelector('#sendBtn')
   const abortBtn = document.querySelector('#abortBtn')
   state.controller = new AbortController()
   setButtonBusy(sendBtn, true, 'Sending')
@@ -762,6 +822,7 @@ async function sendRequest() {
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(error.message || 'Request failed', 'err')
+    showToast('Request failed', error.message || 'Request failed', 'err')
     switchTab('response')
   } finally {
     state.controller = null
