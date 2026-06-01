@@ -350,17 +350,23 @@ function renderConnectionStatus() {
 }
 
 function classifyError(error, provider = currentProvider()) {
-  const message = error?.message || String(error)
+  const message = apiErrorMessage(error)
   if (provider.protocol === 'gemini' && /无可用渠道|distributor|分组 default/.test(message)) {
     return {
-      title: 'Proxy route unavailable',
-      message: 'This Base URL is a proxy without a Gemini image distributor. Use the official Gemini Base URL or configure the proxy channel.',
+      title: `API error${error?.status ? ` · HTTP ${error.status}` : ''}`,
+      message,
+      diagnosis: 'Diagnosis: this Base URL is a proxy without a Gemini image distributor. Use the official Gemini Base URL or configure the proxy channel.',
     }
   }
   if (/API key|permission|PERMISSION_DENIED|401|403/i.test(message)) {
-    return { title: 'Authentication failed', message }
+    return { title: `API error${error?.status ? ` · HTTP ${error.status}` : ''}`, message, diagnosis: 'Diagnosis: authentication or permission failed.' }
   }
-  return { title: 'Request failed', message }
+  return { title: `API error${error?.status ? ` · HTTP ${error.status}` : ''}`, message, diagnosis: '' }
+}
+
+function apiErrorMessage(errorOrBody) {
+  const body = errorOrBody?.body || errorOrBody
+  return body?.error?.message || body?.message || body?.raw || errorOrBody?.message || String(errorOrBody)
 }
 
 function clearFieldErrors() {
@@ -1030,12 +1036,12 @@ async function sendRequest() {
     setResponseHeaders(error.headers || {})
     setCost(cost)
     const snapshot = await captureWorkspaceSnapshot()
-    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), headers: error.headers || {}, images: [], thumbnails: [], cost, snapshot })
+    const classified = classifyError(error, provider)
+    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), headers: error.headers || {}, errorMessage: classified.message, diagnosis: classified.diagnosis, images: [], thumbnails: [], cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
-    const classified = classifyError(error, provider)
     setStatus(classified.message, 'err')
-    setConnectionStatus('err', classified.message)
+    setConnectionStatus('err', classified.diagnosis ? `${classified.message} ${classified.diagnosis}` : classified.message)
     showToast(classified.title, classified.message, 'err')
     switchTab('response')
   } finally {
@@ -1072,12 +1078,15 @@ function renderHistory() {
     const thumbUrl = run.thumbnails?.[0] || run.images?.[0] || ''
     const thumb = thumbUrl ? `<img loading="lazy" src="${thumbUrl}" alt="history result">` : `<span class="history-placeholder">${run.ok ? 'OK' : 'ERR'}</span>`
     const more = run.images?.length > 1 ? `<em>+${run.images.length - 1}</em>` : ''
+    const message = run.ok
+      ? (run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '')
+      : (run.errorMessage || apiErrorMessage(run.response))
     return `<button class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}">
       <span class="history-thumb">${thumb}${more}</span>
       <span class="history-copy">
         <strong>${run.ok ? 'OK' : 'ERR'} ${run.status} · ${escapeHtml(run.request.payload.model || run.request.provider)}</strong>
         <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s · ${escapeHtml(run.cost?.label || 'usage not returned')}</span>
-        <span>${escapeHtml(run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '').slice(0, 140)}</span>
+        <span>${escapeHtml(message).slice(0, 180)}</span>
       </span>
     </button>`
   }).join('')
@@ -1240,7 +1249,13 @@ async function loadImageModels() {
       : { Authorization: `Bearer ${document.querySelector('#apiKey').value.trim()}` }
     const response = await fetch(`${baseUrl()}${modelsPath}`, { headers })
     const body = await response.json()
-    if (!response.ok) throw new Error(body?.error?.message || `HTTP ${response.status}`)
+    if (!response.ok) {
+      const error = new Error(apiErrorMessage(body))
+      error.status = response.status
+      error.body = body
+      error.headers = Object.fromEntries(response.headers.entries())
+      throw error
+    }
     const current = activeModel()
     const modelItems = provider.protocol === 'gemini'
       ? (body.models || []).map((model) => ({ id: String(model.name || '').replace(/^models\//, ''), raw: model }))
@@ -1266,7 +1281,9 @@ async function loadImageModels() {
   } catch (error) {
     const classified = classifyError(error)
     setStatus(classified.message, 'err')
-    setConnectionStatus('err', classified.message)
+    setConnectionStatus('err', classified.diagnosis ? `${classified.message} ${classified.diagnosis}` : classified.message)
+    if (error.body) setResponseBody(error.body)
+    if (error.headers) setResponseHeaders(error.headers)
     showToast(classified.title, classified.message, 'err')
   } finally {
     buttons.forEach((button) => setButtonBusy(button, false))
