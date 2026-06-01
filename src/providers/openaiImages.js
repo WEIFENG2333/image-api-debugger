@@ -1,7 +1,9 @@
 export const openAiImagesProvider = {
   id: 'openai-images',
-  label: 'OpenAI-compatible Images',
+  label: 'GPT / OpenAI Images',
   protocol: 'openai-images',
+  defaultBaseUrl: 'https://api.videocaptioner.cn',
+  defaultModel: 'gpt-image-2',
   supportsSend: true,
   supportsMask: true,
   modelOptions: ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'doubao-seedream-4-0-250828', 'custom'],
@@ -66,7 +68,12 @@ async function parseResponse(response) {
     const error = new Error(body?.error?.message || `HTTP ${response.status}`)
     error.status = response.status
     error.body = body
+    error.headers = responseHeaders(response)
     throw error
   }
-  return { status: response.status, body }
+  return { status: response.status, body, headers: responseHeaders(response) }
+}
+
+function responseHeaders(response) {
+  return Object.fromEntries(Array.from(response.headers.entries()).filter(([key]) => !['authorization', 'x-goog-api-key'].includes(key.toLowerCase())))
 }

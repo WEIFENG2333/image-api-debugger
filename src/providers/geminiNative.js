@@ -1,14 +1,16 @@
 export const geminiNativeProvider = {
   id: 'gemini-native',
-  label: 'Gemini native generateContent',
+  label: 'Gemini',
   protocol: 'gemini',
+  defaultBaseUrl: 'https://generativelanguage.googleapis.com',
+  defaultModel: 'gemini-3.1-flash-image',
   supportsSend: true,
   supportsMask: false,
   modelOptions: [
-    'gemini-2.5-flash-image',
-    'gemini-3.1-flash-image',
-    'gemini-3-pro-image',
-    'gemini-3-pro-image-preview',
+    { value: 'gemini-3.1-flash-image', label: 'NanoPanda 2 / Gemini 3.1 Flash Image' },
+    { value: 'gemini-3-pro-image', label: 'Nano Banana Pro / Gemini 3 Pro Image' },
+    { value: 'gemini-3-pro-image-preview', label: 'Gemini 3 Pro Image Preview' },
+    { value: 'gemini-2.5-flash-image', label: 'Nano Banana / Gemini 2.5 Flash Image' },
     'custom',
   ],
   sizeOptions: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
@@ -96,7 +98,7 @@ export const geminiNativeProvider = {
 }
 
 function aspectRatio(size) {
-  if (['1:1', '3:4', '4:3', '9:16', '16:9'].includes(size)) return size
+  if (['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'].includes(size)) return size
   if (size === '1536x1024') return '3:2'
   if (size === '1024x1536') return '2:3'
   return '1:1'
@@ -140,7 +142,12 @@ async function parseResponse(response) {
     const error = new Error(body?.error?.message || `HTTP ${response.status}`)
     error.status = response.status
     error.body = body
+    error.headers = responseHeaders(response)
     throw error
   }
-  return { status: response.status, body }
+  return { status: response.status, body, headers: responseHeaders(response) }
+}
+
+function responseHeaders(response) {
+  return Object.fromEntries(Array.from(response.headers.entries()).filter(([key]) => !['authorization', 'x-goog-api-key'].includes(key.toLowerCase())))
 }

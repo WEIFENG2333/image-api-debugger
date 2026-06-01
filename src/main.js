@@ -16,9 +16,11 @@ const state = {
   controller: null,
   customSelects: new Map(),
   rawResponseText: '{}',
+  rawHeadersText: '{}',
   lastPoint: null,
   workspaceSaveTimer: null,
   hydratingWorkspace: false,
+  connections: {},
 }
 
 const icons = {
@@ -64,9 +66,17 @@ app.innerHTML = `
           <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Ready</span></div>
         </section>
 
-        <section id="connectorCard" class="card collapsed">
+        <section class="card provider-card">
+          <div class="card-head"><h2>Provider</h2><span id="providerStatus" class="connection-pill idle">Not tested</span></div>
+          <div class="provider-switch">
+            ${providers.map((p) => `<button class="provider-choice ${p.id === 'openai-images' ? 'active' : ''}" data-provider="${p.id}"><strong>${p.label}</strong><span>${p.protocol === 'gemini' ? 'Native generateContent' : 'Images API compatible'}</span></button>`).join('')}
+          </div>
+          <select id="provider" class="hidden">${providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}</select>
+        </section>
+
+        <section id="connectorCard" class="card">
           <div class="card-head">
-            <h2>Connector</h2>
+            <h2 id="connectorTitle">GPT connection</h2>
             <div class="head-actions">
               <button id="testModelsBtn" class="icon-btn" title="Load models" aria-label="Load models">${icons.database}</button>
               <button id="toggleConnectorBtn" class="icon-btn" title="Expand connector" aria-label="Expand connector">${icons.chevronDown}</button>
@@ -75,6 +85,7 @@ app.innerHTML = `
           <div class="card-body">
             <div class="field"><label>Base URL</label><input id="baseUrl" value="https://api.videocaptioner.cn"></div>
             <div class="field"><label>API key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
+            <div id="connectionDetail" class="connection-detail">Connection has not been tested.</div>
             <div class="icon-row">
               <button id="saveWorkspaceBtn" class="btn subtle">${icons.save}<span>Save workspace</span></button>
               <button id="loadModelsBtn" class="btn subtle">${icons.database}<span>Load models</span></button>
@@ -93,7 +104,6 @@ app.innerHTML = `
                 <button class="mode" data-mode="mask">Mask</button>
               </div>
             </div>
-            <div class="field"><label>Provider</label><select id="provider">${providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}</select></div>
             <div class="field"><label>Model</label><select id="model"><option>gpt-image-2</option><option>gpt-image-1.5</option><option>gpt-image-1</option><option>gpt-image-1-mini</option><option>doubao-seedream-4-0-250828</option><option value="custom">Custom...</option></select></div>
             <div id="customModelWrap" class="field hidden"><label>Custom model</label><input id="customModel"></div>
             <div class="grid-2">
@@ -205,6 +215,10 @@ app.innerHTML = `
               <summary><span>Raw response</span><button class="btn subtle compact" title="Copy response" data-copy="responsePreview">${icons.copy}<span>Copy</span></button></summary>
               <pre id="responsePreview">{}</pre>
             </details>
+            <details class="raw-panel headers-panel">
+              <summary><span>Response headers</span><button class="btn subtle compact" title="Copy headers" data-copy="headersPreview">${icons.copy}<span>Copy</span></button></summary>
+              <pre id="headersPreview">{}</pre>
+            </details>
           </div>
           <div id="historyTab" class="tab-body hidden"><div id="historyList" class="history"></div></div>
           <div id="curlTab" class="tab-body hidden">
@@ -215,6 +229,7 @@ app.innerHTML = `
       </section>
     </main>
     <div id="toast" class="toast hidden" role="alert" aria-live="assertive">
+      <button id="toastClose" class="icon-btn" title="Close" aria-label="Close">${icons.close}</button>
       <strong id="toastTitle">Check request</strong>
       <span id="toastMessage"></span>
     </div>
@@ -244,15 +259,16 @@ const els = {
   prompt: $('prompt'), warnings: $('warnings'), endpointHint: $('endpointHint'), estimate: $('estimate'), sourceHint: $('sourceHint'),
   sizeLabel: $('sizeLabel'), qualityLabel: $('qualityLabel'), formatCountRow: $('formatCountRow'),
   backgroundCompressionRow: $('backgroundCompressionRow'), inputFidelityRow: $('inputFidelityRow'),
+  providerStatus: $('providerStatus'), connectorTitle: $('connectorTitle'), connectionDetail: $('connectionDetail'),
   sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
   makeMaskBtn: $('makeMaskBtn'), downloadMaskBtn: $('downloadMaskBtn'), maskImage: $('maskImage'), maskCanvas: $('maskCanvas'),
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
   paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), clearMaskBtn: $('clearMaskBtn'),
   brushSize: $('brushSize'), brushNumber: $('brushNumber'), brushDownBtn: $('brushDownBtn'), brushUpBtn: $('brushUpBtn'),
-  requestPreview: $('requestPreview'), responsePreview: $('responsePreview'),
+  requestPreview: $('requestPreview'), responsePreview: $('responsePreview'), headersPreview: $('headersPreview'),
   curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'),
   lightbox: $('lightbox'), lightboxImage: $('lightboxImage'), lightboxMeta: $('lightboxMeta'), lightboxViewport: $('lightboxViewport'),
-  toast: $('toast'), toastTitle: $('toastTitle'), toastMessage: $('toastMessage'),
+  toast: $('toast'), toastTitle: $('toastTitle'), toastMessage: $('toastMessage'), toastClose: $('toastClose'),
 }
 
 function setStatus(text, type = '') {
@@ -265,7 +281,77 @@ function showToast(title, message, type = 'err') {
   els.toastMessage.textContent = message
   els.toast.className = `toast ${type}`.trim()
   window.clearTimeout(showToast.timer)
-  showToast.timer = window.setTimeout(() => els.toast.classList.add('hidden'), 5200)
+  showToast.timer = window.setTimeout(hideToast, type === 'err' ? 9000 : 5200)
+}
+
+function hideToast() {
+  els.toast.classList.add('hidden')
+}
+
+function connectionFor(providerId = els.provider.value) {
+  const provider = providerById(providerId)
+  return state.connections[providerId] || {
+    baseUrl: provider.defaultBaseUrl || '',
+    apiKey: '',
+    status: 'idle',
+    message: 'Connection has not been tested.',
+    testedAt: '',
+  }
+}
+
+function saveCurrentConnection() {
+  const providerId = els.provider.value
+  const current = connectionFor(providerId)
+  state.connections[providerId] = {
+    ...current,
+    baseUrl: els.baseUrl.value,
+    apiKey: els.apiKey.value,
+  }
+}
+
+function applyConnection(providerId = els.provider.value) {
+  const connection = connectionFor(providerId)
+  els.baseUrl.value = connection.baseUrl
+  els.apiKey.value = connection.apiKey
+  renderConnectionStatus()
+}
+
+function setConnectionStatus(status, message) {
+  const providerId = els.provider.value
+  state.connections[providerId] = {
+    ...connectionFor(providerId),
+    baseUrl: els.baseUrl.value,
+    apiKey: els.apiKey.value,
+    status,
+    message,
+    testedAt: new Date().toISOString(),
+  }
+  renderConnectionStatus()
+  scheduleWorkspaceSave()
+}
+
+function renderConnectionStatus() {
+  const provider = currentProvider()
+  const connection = connectionFor()
+  const label = { idle: 'Not tested', busy: 'Checking', ok: 'Connected', err: 'Failed' }[connection.status] || 'Not tested'
+  els.providerStatus.textContent = label
+  els.providerStatus.className = `connection-pill ${connection.status || 'idle'}`
+  els.connectionDetail.textContent = connection.message || 'Connection has not been tested.'
+  els.connectorTitle.textContent = `${provider.label} connection`
+}
+
+function classifyError(error, provider = currentProvider()) {
+  const message = error?.message || String(error)
+  if (provider.protocol === 'gemini' && /无可用渠道|distributor|分组 default/.test(message)) {
+    return {
+      title: 'Proxy route unavailable',
+      message: 'This Base URL is a proxy without a Gemini image distributor. Use the official Gemini Base URL or configure the proxy channel.',
+    }
+  }
+  if (/API key|permission|PERMISSION_DENIED|401|403/i.test(message)) {
+    return { title: 'Authentication failed', message }
+  }
+  return { title: 'Request failed', message }
 }
 
 function clearFieldErrors() {
@@ -345,6 +431,7 @@ function currentProvider() {
 }
 
 function baseUrl() {
+  saveCurrentConnection()
   return els.baseUrl.value.trim().replace(/\/+$/, '')
 }
 
@@ -394,6 +481,12 @@ function setResponseBody(body, options = {}) {
   state.rawResponseText = JSON.stringify(copyFull ? body : compact, null, 2)
 }
 
+function setResponseHeaders(headers = {}) {
+  const compact = headers && Object.keys(headers).length ? headers : {}
+  els.headersPreview.textContent = JSON.stringify(compact, null, 2)
+  state.rawHeadersText = JSON.stringify(compact, null, 2)
+}
+
 function maskSummary() {
   const source = state.files[0]
   if (!source) return { required: true, status: 'missing source image' }
@@ -410,10 +503,9 @@ function maskSummary() {
 function warnings() {
   const items = []
   const provider = currentProvider()
-  if (provider.protocol === 'gemini') items.push('Gemini uses generateContent JSON with inline_data and generationConfig.imageConfig. It does not use OpenAI background, compression, input_fidelity, or mask files.')
   if (provider.protocol === 'gemini' && state.mode === 'mask') items.push('Gemini native image editing uses semantic masking in the prompt; alpha-mask upload is not supported here.')
-  if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') items.push('gpt-image-2 does not support background=transparent.')
-  if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') items.push('transparent background requires png or webp.')
+  if (provider.protocol !== 'gemini' && activeModel() === 'gpt-image-2' && els.background.value === 'transparent') items.push('gpt-image-2 does not support background=transparent.')
+  if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') items.push('transparent background requires png or webp.')
   if (state.mode !== 'generate' && !state.files.length) items.push('Edit and Mask require at least one source image.')
   if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) items.push('Generate a mask canvas or import a mask before sending.')
   if (state.mode === 'mask' && state.files.length > 1) items.push('Mask mode sends only the first source image so the mask dimensions match exactly.')
@@ -431,8 +523,8 @@ function validate(show = true) {
   const provider = currentProvider()
   if (!provider.supportsSend) addError('provider', 'This provider adapter is preview-only in this build.')
   if (provider.protocol === 'gemini' && state.mode === 'mask') addError('maskCanvas', 'Gemini native does not accept alpha mask files. Use Edit with a semantic prompt.')
-  if (activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
-  if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
+  if (provider.protocol !== 'gemini' && activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
+  if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
   if (!baseUrl()) addError('baseUrl', 'Base URL is empty.')
   if (!els.apiKey.value.trim()) addError('apiKey', 'API key is empty.')
   if (state.mode !== 'generate' && !state.files.length) addError('sourceInput', 'No source images selected.')
@@ -446,7 +538,6 @@ function validate(show = true) {
       revealField(errors[0].field)
     } else if (result.warnings.length) {
       setStatus(result.warnings[0], 'ok')
-      showToast('Heads up', result.warnings[0], 'warn')
     }
     else setStatus('Validation passed', 'ok')
   }
@@ -456,13 +547,21 @@ function validate(show = true) {
 function setSelectOptions(select, options, fallback) {
   const current = select.value
   select.innerHTML = options.map((option) => {
-    const value = typeof option === 'string' ? option : option.value
-    const label = typeof option === 'string' ? option : option.label
+    const value = optionValue(option)
+    const label = optionLabel(option)
     return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`
   }).join('')
-  if (options.some((option) => (typeof option === 'string' ? option : option.value) === current)) select.value = current
-  else select.value = fallback || (typeof options[0] === 'string' ? options[0] : options[0]?.value || '')
+  if (options.some((option) => optionValue(option) === current)) select.value = current
+  else select.value = fallback || optionValue(options[0]) || ''
   rebuildCustomSelect(select)
+}
+
+function optionValue(option) {
+  return typeof option === 'string' ? option : option?.value || ''
+}
+
+function optionLabel(option) {
+  return typeof option === 'string' ? option : option?.label || option?.value || ''
 }
 
 function applyProviderSchema() {
@@ -470,11 +569,11 @@ function applyProviderSchema() {
   if (els.provider.dataset.appliedProvider === provider.id) return
   els.provider.dataset.appliedProvider = provider.id
   if (provider.protocol === 'gemini') {
-    setSelectOptions(els.model, provider.modelOptions, 'gemini-2.5-flash-image')
+    setSelectOptions(els.model, provider.modelOptions, provider.defaultModel || 'gemini-3.1-flash-image')
     setSelectOptions(els.size, provider.sizeOptions, '1:1')
     setSelectOptions(els.quality, provider.qualityOptions, '1K')
   } else {
-    setSelectOptions(els.model, provider.modelOptions || ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'custom'], 'gpt-image-2')
+    setSelectOptions(els.model, provider.modelOptions || ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'custom'], provider.defaultModel || 'gpt-image-2')
     setSelectOptions(els.size, ['1024x1024', '1536x1024', '1024x1536', 'auto', 'custom'], '1024x1024')
     setSelectOptions(els.quality, ['low', 'medium', 'high', 'auto'], 'medium')
   }
@@ -483,6 +582,15 @@ function applyProviderSchema() {
 function render() {
   applyProviderSchema()
   const provider = currentProvider()
+  if (provider.supportsMask === false && state.mode === 'mask') applyMode('edit')
+  renderConnectionStatus()
+  document.querySelector('.segment')?.classList.toggle('two-mode', provider.supportsMask === false)
+  document.querySelector('[data-mode="mask"]')?.classList.toggle('hidden', provider.supportsMask === false)
+  document.querySelectorAll('.provider-choice').forEach((button) => {
+    const active = button.dataset.provider === provider.id
+    button.classList.toggle('active', active)
+    button.dataset.status = connectionFor(button.dataset.provider).status || 'idle'
+  })
   els.customModelWrap.classList.toggle('hidden', els.model.value !== 'custom')
   els.customSizeWrap.classList.toggle('hidden', provider.protocol === 'gemini' || els.size.value !== 'custom')
   els.formatCountRow.classList.toggle('hidden', provider.protocol === 'gemini')
@@ -503,6 +611,19 @@ function render() {
   els.estimate.textContent = `$${estimateCost().toFixed(3)} est.`
   updateMaskMetrics()
   syncAllCustomSelects()
+}
+
+function switchProvider(providerId) {
+  if (providerId === els.provider.value) return
+  saveCurrentConnection()
+  els.provider.value = providerId
+  els.provider.dataset.appliedProvider = ''
+  applyConnection(providerId)
+  const provider = currentProvider()
+  state.mode = provider.supportsMask === false && state.mode === 'mask' ? 'edit' : state.mode
+  applyMode(state.mode)
+  render()
+  scheduleWorkspaceSave()
 }
 
 function buildCurl() {
@@ -870,27 +991,32 @@ async function sendRequest() {
     const images = responseImages(response.body, els.outputFormat.value)
     const cost = usageCost(response.body, activeModel())
     setResponseBody(response.body)
+    setResponseHeaders(response.headers)
     setCost(cost)
     renderProofs(images)
     const thumbnails = await imageThumbnails(images)
     const snapshot = await captureWorkspaceSnapshot()
-    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), images, thumbnails, cost, snapshot })
+    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), headers: response.headers || {}, images, thumbnails, cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(`OK ${response.status} · ${(latency / 1000).toFixed(1)}s`, 'ok')
+    setConnectionStatus('ok', `Connected · last request OK ${response.status} · ${(latency / 1000).toFixed(1)}s`)
     switchTab('response')
   } catch (error) {
     const latency = Math.round(performance.now() - started)
     const body = error.body || { error: { message: error.message || String(error) } }
     const cost = usageCost(body, activeModel())
     setResponseBody(body)
+    setResponseHeaders(error.headers || {})
     setCost(cost)
     const snapshot = await captureWorkspaceSnapshot()
-    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), images: [], thumbnails: [], cost, snapshot })
+    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), headers: error.headers || {}, images: [], thumbnails: [], cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
-    setStatus(error.message || 'Request failed', 'err')
-    showToast('Request failed', error.message || 'Request failed', 'err')
+    const classified = classifyError(error, provider)
+    setStatus(classified.message, 'err')
+    setConnectionStatus('err', classified.message)
+    showToast(classified.title, classified.message, 'err')
     switchTab('response')
   } finally {
     state.controller = null
@@ -942,6 +1068,7 @@ async function restoreRun(id) {
   const run = state.runs.find((item) => item.id === id)
   if (!run) return
   setResponseBody(run.response, { copyFull: false })
+  setResponseHeaders(run.headers || {})
   renderProofs(run.images || [])
   switchTab('response')
   await restoreWorkspaceSnapshot(run.snapshot).catch(() => false)
@@ -1016,6 +1143,7 @@ function workspaceConfig() {
     mode: state.mode,
     brushSize: els.brushSize.value,
     connectorCollapsed: document.querySelector('#connectorCard').classList.contains('collapsed'),
+    connections: state.connections,
   }
 }
 
@@ -1054,10 +1182,20 @@ function updateConnectorToggle() {
 function loadWorkspace() {
   const config = loadConfig()
   state.hydratingWorkspace = true
+  state.connections = config.connections || {
+    'openai-images': {
+      baseUrl: config.baseUrl || providerById('openai-images').defaultBaseUrl || '',
+      apiKey: config.apiKey || '',
+      status: 'idle',
+      message: 'Connection has not been tested.',
+    },
+  }
   for (const [key, value] of Object.entries(config)) {
+    if (key === 'connections') continue
     const element = document.querySelector(`#${key}`)
     if (element && value !== undefined && value !== null) element.value = value
   }
+  applyConnection(els.provider.value)
   applyMode(config.mode || state.mode)
   if (config.brushSize) {
     els.brushSize.value = config.brushSize
@@ -1075,6 +1213,7 @@ async function loadImageModels() {
   try {
     const provider = currentProvider()
     const modelsPath = provider.protocol === 'gemini' ? '/v1beta/models' : '/v1/models'
+    setConnectionStatus('busy', `Checking ${modelsPath}...`)
     setStatus(`Loading ${modelsPath}...`, 'busy')
     const headers = provider.protocol === 'gemini'
       ? { 'x-goog-api-key': document.querySelector('#apiKey').value.trim() }
@@ -1090,16 +1229,25 @@ async function loadImageModels() {
       const text = JSON.stringify(model).toLowerCase()
       return model.id && (text.includes('image') || text.includes('图像') || text.includes('绘画') || text.includes('gemini') || text.includes('banana'))
     }).map((model) => model.id)))
-    const defaults = provider.modelOptions?.filter((id) => id !== 'custom') || []
-    els.model.innerHTML = [...new Set([...defaults, ...ids])].map((id) => `<option>${escapeHtml(id)}</option>`).join('') + '<option value="custom">Custom...</option>'
+    const defaults = provider.modelOptions?.filter((item) => optionValue(item) !== 'custom') || []
+    const merged = [...defaults, ...ids].reduce((items, item) => {
+      if (!items.some((existing) => optionValue(existing) === optionValue(item))) items.push(item)
+      return items
+    }, [])
+    els.model.innerHTML = merged.map((item) => `<option value="${escapeHtml(optionValue(item))}">${escapeHtml(optionLabel(item))}</option>`).join('') + '<option value="custom">Custom...</option>'
     if ([...els.model.options].some((option) => option.value === current)) els.model.value = current
     rebuildCustomSelect(els.model)
     setStatus(`${modelsPath} OK · ${ids.length} image-like models`, 'ok')
+    setConnectionStatus('ok', `${modelsPath} OK · ${ids.length} image-like models`)
     setResponseBody(body)
+    setResponseHeaders(Object.fromEntries(response.headers.entries()))
     switchTab('response')
     render()
   } catch (error) {
-    setStatus(error.message || String(error), 'err')
+    const classified = classifyError(error)
+    setStatus(classified.message, 'err')
+    setConnectionStatus('err', classified.message)
+    showToast(classified.title, classified.message, 'err')
   } finally {
     buttons.forEach((button) => setButtonBusy(button, false))
   }
@@ -1125,6 +1273,7 @@ async function hydrateHistoryThumbnails() {
 
 function enhanceSelects() {
   document.querySelectorAll('select').forEach((select) => {
+    if (select.id === 'provider') return
     select.classList.add('native-select')
     const widget = document.createElement('div')
     widget.className = 'select-shell'
@@ -1237,14 +1386,23 @@ function bind() {
     scheduleWorkspaceSave()
     if (state.mode === 'mask' && state.files[0] && !state.maskReady) generateMaskCanvas({ silent: true })
   }))
+  document.querySelectorAll('.provider-choice').forEach((button) => button.addEventListener('click', () => {
+    switchProvider(button.dataset.provider)
+    flashButton(button)
+  }))
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
   document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
     event.stopPropagation()
-    const text = button.dataset.copy === 'responsePreview' ? state.rawResponseText : document.querySelector(`#${button.dataset.copy}`).textContent
+    const text = button.dataset.copy === 'responsePreview'
+      ? state.rawResponseText
+      : button.dataset.copy === 'headersPreview'
+        ? state.rawHeadersText
+        : document.querySelector(`#${button.dataset.copy}`).textContent
     await navigator.clipboard.writeText(text)
     flashButton(button)
     setStatus('Copied', 'ok')
   }))
+  els.toastClose.addEventListener('click', hideToast)
   document.querySelector('#toggleConnectorBtn').addEventListener('click', () => {
     const card = document.querySelector('#connectorCard')
     card.classList.toggle('collapsed')
@@ -1339,10 +1497,15 @@ function bind() {
   })
   for (const element of document.querySelectorAll('input, select, textarea')) {
     element.addEventListener('input', () => {
+      if (element === els.baseUrl || element === els.apiKey) saveCurrentConnection()
       render()
       scheduleWorkspaceSave()
     })
-    element.addEventListener('change', scheduleWorkspaceSave)
+    element.addEventListener('change', () => {
+      if (element === els.provider) switchProvider(element.value)
+      if (element === els.baseUrl || element === els.apiKey) saveCurrentConnection()
+      scheduleWorkspaceSave()
+    })
   }
 }
 
