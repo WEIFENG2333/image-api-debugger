@@ -152,6 +152,36 @@ export async function imageThumbnail(url, maxSize = 180) {
   return canvasDataUrl(canvas)
 }
 
+export async function imageInfo(url) {
+  const image = await loadImage(url)
+  return {
+    width: image.naturalWidth || 0,
+    height: image.naturalHeight || 0,
+    aspectRatio: aspectRatioLabel(image.naturalWidth || 0, image.naturalHeight || 0),
+  }
+}
+
+export async function imageInfos(urls) {
+  return Promise.all(urls.map(async (url) => {
+    try {
+      return await imageInfo(url)
+    } catch {
+      return { width: 0, height: 0, aspectRatio: '-' }
+    }
+  }))
+}
+
+export function aspectRatioLabel(width, height) {
+  if (!width || !height) return '-'
+  const divisor = gcd(width, height)
+  return `${Math.round(width / divisor)}:${Math.round(height / divisor)}`
+}
+
+function gcd(a, b) {
+  while (b) [a, b] = [b, a % b]
+  return a || 1
+}
+
 export async function imageThumbnails(urls, maxSize = 180) {
   return Promise.all(urls.map(async (url) => {
     try {

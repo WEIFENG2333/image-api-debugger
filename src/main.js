@@ -1,7 +1,7 @@
 import './styles.css'
 import { providerById, providers } from './providers/index.js'
-import { alphaMaskFromPaintCanvas, blobImageSize, dataUrlFile, fileDataUrl, imageMeta, imageThumbnails, normalizeImageFile, resizeMaskFile, responseImages } from './lib/images.js'
-import { clearRuns, listRuns, loadConfig, saveConfig, saveRun } from './lib/storage.js'
+import { alphaMaskFromPaintCanvas, blobImageSize, dataUrlFile, fileDataUrl, imageInfos, imageMeta, imageThumbnails, normalizeImageFile, resizeMaskFile, responseImages } from './lib/images.js'
+import { clearRuns, deleteRun, listRuns, loadConfig, saveConfig, saveRun } from './lib/storage.js'
 
 const app = document.querySelector('#app')
 
@@ -114,8 +114,8 @@ app.innerHTML = `
             <div class="field"><label>Model</label><select id="model"><option>gpt-image-2</option><option>gpt-image-1.5</option><option>gpt-image-1</option><option>gpt-image-1-mini</option><option>doubao-seedream-4-0-250828</option><option value="custom">Custom...</option></select></div>
             <div id="customModelWrap" class="field hidden"><label>Custom model</label><input id="customModel"></div>
             <div class="grid-2">
-              <div class="field"><label id="sizeLabel">Size</label><select id="size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option><option>auto</option><option value="custom">custom</option></select></div>
-              <div class="field"><label id="qualityLabel">Quality</label><select id="quality"><option>low</option><option selected>medium</option><option>high</option><option>auto</option></select></div>
+              <div class="field"><label id="sizeLabel">Size</label><select id="size"><option>1024x1024</option><option>1536x1024</option><option>1024x1536</option><option selected>auto</option><option value="custom">custom</option></select></div>
+              <div class="field"><label id="qualityLabel">Quality</label><select id="quality"><option selected>low</option><option>medium</option><option>high</option><option>auto</option></select></div>
             </div>
             <div id="customSizeWrap" class="grid-2 hidden">
               <div class="field"><label>Width</label><input id="customWidth" type="number" min="1" max="4096" value="1024"></div>
@@ -589,8 +589,8 @@ function applyProviderSchema() {
     setSelectOptions(els.quality, provider.qualityOptions, '1K')
   } else {
     setSelectOptions(els.model, provider.modelOptions || ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'custom'], provider.defaultModel || 'gpt-image-2')
-    setSelectOptions(els.size, ['1024x1024', '1536x1024', '1024x1536', 'auto', 'custom'], '1024x1024')
-    setSelectOptions(els.quality, ['low', 'medium', 'high', 'auto'], 'medium')
+    setSelectOptions(els.size, ['auto', '1024x1024', '1536x1024', '1024x1536', 'custom'], 'auto')
+    setSelectOptions(els.quality, ['low', 'medium', 'high', 'auto'], 'low')
   }
 }
 
@@ -1020,10 +1020,11 @@ async function sendRequest() {
     setResponseBody(response.body)
     setResponseHeaders(response.headers)
     setCost(cost)
-    renderProofs(images)
+    const imageMeta = await imageInfos(images)
+    renderProofs(images, imageMeta)
     const thumbnails = await imageThumbnails(images)
     const snapshot = await captureWorkspaceSnapshot()
-    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), headers: response.headers || {}, images, thumbnails, cost, snapshot })
+    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), headers: response.headers || {}, images, imageMeta, thumbnails, cost, snapshot })
     state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(`OK ${response.status} · ${(latency / 1000).toFixed(1)}s`, 'ok')
@@ -1052,7 +1053,7 @@ async function sendRequest() {
   }
 }
 
-function renderProofs(images) {
+function renderProofs(images, meta = []) {
   if (!images.length) {
     els.resultStage.className = 'result-stage empty'
     els.resultStage.innerHTML = '<div>No image yet</div>'
@@ -1063,15 +1064,21 @@ function renderProofs(images) {
   els.resultStage.innerHTML = images.map((url, index) => `
     <button class="result-image" data-preview-index="${index}" title="Open large preview">
       <img src="${url}" alt="result ${index + 1}">
+      ${imageMetaBadge(meta[index])}
       <span>${icons.zoom}</span>
     </button>
   `).join('')
   els.proofs.innerHTML = images.map((url, index) => `
     <button class="proof ${index === 0 ? 'active' : ''}" data-preview-index="${index}" title="Open result ${index + 1}">
       <img src="${url}" alt="result thumbnail ${index + 1}">
-      <span>#${index + 1}</span>
+      <span>#${index + 1} · ${escapeHtml(meta[index]?.aspectRatio || '-')}</span>
     </button>
   `).join('')
+}
+
+function imageMetaBadge(meta) {
+  if (!meta?.width || !meta?.height) return ''
+  return `<em class="image-meta">${meta.width}x${meta.height} · ${escapeHtml(meta.aspectRatio)}</em>`
 }
 
 function renderHistory() {
@@ -1079,19 +1086,38 @@ function renderHistory() {
     const thumbUrl = run.thumbnails?.[0] || run.images?.[0] || ''
     const thumb = thumbUrl ? `<img loading="lazy" src="${thumbUrl}" alt="history result">` : `<span class="history-placeholder">${run.ok ? 'OK' : 'ERR'}</span>`
     const more = run.images?.length > 1 ? `<em>+${run.images.length - 1}</em>` : ''
+    const firstMeta = run.imageMeta?.[0]
+    const metaText = firstMeta?.width ? `${firstMeta.width}x${firstMeta.height} · ${firstMeta.aspectRatio}` : ''
     const message = run.ok
       ? (run.request.payload.prompt || run.request.payload.contents?.[0]?.parts?.[0]?.text || '')
       : (run.errorMessage || apiErrorMessage(run.response))
-    return `<button class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}">
+    return `<div class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}" role="button" tabindex="0">
       <span class="history-thumb">${thumb}${more}</span>
       <span class="history-copy">
         <strong>${run.ok ? 'OK' : 'ERR'} ${run.status} · ${escapeHtml(run.request.payload.model || run.request.provider)}</strong>
-        <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s · ${escapeHtml(run.cost?.label || 'usage not returned')}</span>
+        <span>${new Date(run.createdAt).toLocaleString()} · ${(run.latency / 1000).toFixed(1)}s · ${escapeHtml(run.cost?.label || 'usage not returned')}${metaText ? ` · ${escapeHtml(metaText)}` : ''}</span>
         <span>${escapeHtml(message).slice(0, 180)}</span>
       </span>
-    </button>`
+      <span class="history-actions"><button class="icon-btn history-delete" data-delete-run="${run.id}" title="Delete run" aria-label="Delete run">${icons.trash}</button></span>
+    </div>`
   }).join('')
-  els.historyList.querySelectorAll('[data-id]').forEach((button) => button.addEventListener('click', () => restoreRun(Number(button.dataset.id))))
+  els.historyList.querySelectorAll('.history-item[data-id]').forEach((item) => {
+    item.addEventListener('click', () => restoreRun(Number(item.dataset.id)))
+    item.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        restoreRun(Number(item.dataset.id))
+      }
+    })
+  })
+  els.historyList.querySelectorAll('[data-delete-run]').forEach((button) => button.addEventListener('click', async (event) => {
+    event.stopPropagation()
+    const id = Number(button.dataset.deleteRun)
+    await deleteRun(id)
+    state.runs = state.runs.filter((run) => run.id !== id)
+    renderHistory()
+    setStatus('History item deleted', 'ok')
+  }))
 }
 
 async function restoreRun(id) {
@@ -1099,7 +1125,7 @@ async function restoreRun(id) {
   if (!run) return
   setResponseBody(run.response, { copyFull: false })
   setResponseHeaders(run.headers || {})
-  renderProofs(run.images || [])
+  renderProofs(run.images || [], run.imageMeta || [])
   switchTab('response')
   await restoreWorkspaceSnapshot(run.snapshot).catch(() => false)
   setCost(run.cost || null)
