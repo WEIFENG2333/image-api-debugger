@@ -349,13 +349,14 @@ function requestData() {
   const provider = currentProvider()
   const providerState = stateForProvider()
   const payload = provider.payload(providerState)
+  const files = state.mode === 'mask' && state.files[0] ? [state.files[0]] : state.files
   return {
     provider: provider.id,
     method: 'POST',
     url: `${baseUrl()}${provider.endpoint(providerState)}`,
     contentType: state.mode === 'generate' ? 'application/json' : 'multipart/form-data',
     payload,
-    files: state.mode === 'generate' ? [] : state.files.map((file, index) => ({
+    files: state.mode === 'generate' ? [] : files.map((file, index) => ({
       field: 'image',
       index,
       name: file.name,
@@ -409,6 +410,7 @@ function warnings() {
   if (els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') items.push('transparent background requires png or webp.')
   if (state.mode !== 'generate' && !state.files.length) items.push('Edit and Mask require at least one source image.')
   if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) items.push('Generate a mask canvas or import a mask before sending.')
+  if (state.mode === 'mask' && state.files.length > 1) items.push('Mask mode sends only the first source image so the mask dimensions match exactly.')
   return items
 }
 
@@ -778,7 +780,7 @@ async function requestAssetsForSend() {
   if (maskSize.width !== imageSize.width || maskSize.height !== imageSize.height) {
     throw new Error(`Mask size ${maskSize.width}x${maskSize.height} does not match normalized image size ${imageSize.width}x${imageSize.height}.`)
   }
-  return { files: [normalizedSource, ...state.files.slice(1)], maskBlob }
+  return { files: [normalizedSource], maskBlob }
 }
 
 async function sendRequest() {
