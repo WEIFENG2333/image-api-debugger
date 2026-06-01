@@ -14,6 +14,7 @@ const state = {
   maskTool: 'paint',
   runs: [],
   controller: null,
+  customSelects: new Map(),
 }
 
 const icons = {
@@ -29,6 +30,19 @@ const icons = {
   copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><rect x="4" y="4" width="11" height="11" rx="2"/></svg>',
   mask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4-8 12-8 16 0"/><path d="M7 14c1.2 2 2.8 3 5 3s3.8-1 5-3"/><path d="M9 14h.01"/><path d="M15 14h.01"/></svg>',
   download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+}
+
+function setButtonBusy(button, busy, label = '') {
+  button.classList.toggle('is-loading', busy)
+  button.toggleAttribute('aria-busy', busy)
+  button.disabled = busy
+  if (label) button.dataset.busyLabel = label
+}
+
+function flashButton(button, kind = 'done') {
+  button.classList.remove('flash-done', 'flash-warn')
+  button.classList.add(kind === 'warn' ? 'flash-warn' : 'flash-done')
+  window.setTimeout(() => button.classList.remove('flash-done', 'flash-warn'), 700)
 }
 
 app.innerHTML = `
@@ -325,6 +339,7 @@ function render() {
   els.curlPreview.textContent = buildCurl()
   els.estimate.textContent = `$${estimateCost().toFixed(3)} est.`
   updateMaskMetrics()
+  syncAllCustomSelects()
 }
 
 function buildCurl() {
@@ -355,12 +370,15 @@ function estimateCost() {
 }
 
 async function loadSourceFiles(files) {
+  const zone = document.querySelector('#sourceInput')?.closest('.file-zone')
+  zone?.classList.add('is-loading')
   state.files.forEach((item) => URL.revokeObjectURL(item.url))
   const selected = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
   state.files = await Promise.all(selected.map((file) => {
     const url = URL.createObjectURL(file)
     return imageMeta(file, url)
   }))
+  zone?.classList.remove('is-loading')
   state.maskReady = false
   renderFiles()
   render()
@@ -389,6 +407,7 @@ function generateMaskCanvas() {
     setStatus('Upload a source image first', 'err')
     return
   }
+  setButtonBusy(els.makeMaskBtn, true, 'Preparing')
   els.maskImage.src = source.url
   els.maskImage.onload = () => {
     els.maskCanvas.width = source.width
@@ -396,8 +415,14 @@ function generateMaskCanvas() {
     clearMask()
     state.maskReady = true
     setStatus(`Mask canvas ${source.width}x${source.height} ready`, 'ok')
+    setButtonBusy(els.makeMaskBtn, false)
+    flashButton(els.makeMaskBtn)
     render()
     requestAnimationFrame(syncCanvasSize)
+  }
+  els.maskImage.onerror = () => {
+    setButtonBusy(els.makeMaskBtn, false)
+    setStatus('Could not load source image for mask canvas', 'err')
   }
 }
 
@@ -476,9 +501,11 @@ async function sendRequest() {
 
   const request = requestData()
   const started = performance.now()
+  const sendBtn = document.querySelector('#sendBtn')
+  const abortBtn = document.querySelector('#abortBtn')
   state.controller = new AbortController()
-  document.querySelector('#sendBtn').disabled = true
-  document.querySelector('#abortBtn').disabled = false
+  setButtonBusy(sendBtn, true, 'Sending')
+  abortBtn.disabled = false
   setStatus('Sending request...', 'busy')
   try {
     const maskBlob = state.mode === 'mask' ? await apiMaskBlob() : null
@@ -511,8 +538,8 @@ async function sendRequest() {
     switchTab('response')
   } finally {
     state.controller = null
-    document.querySelector('#sendBtn').disabled = false
-    document.querySelector('#abortBtn').disabled = true
+    setButtonBusy(sendBtn, false)
+    abortBtn.disabled = true
   }
 }
 
@@ -556,6 +583,7 @@ function saveWorkspace() {
     inputFidelity: els.inputFidelity.value,
   })
   setStatus('Workspace saved', 'ok')
+  flashButton(document.querySelector('#saveWorkspaceBtn'))
 }
 
 function loadWorkspace() {
@@ -567,6 +595,8 @@ function loadWorkspace() {
 }
 
 async function loadImageModels() {
+  const buttons = [document.querySelector('#testModelsBtn'), document.querySelector('#loadModelsBtn')].filter(Boolean)
+  buttons.forEach((button) => setButtonBusy(button, true, 'Loading'))
   try {
     setStatus('Loading /v1/models...', 'busy')
     const response = await fetch(`${baseUrl()}/v1/models`, { headers: { Authorization: `Bearer ${document.querySelector('#apiKey').value.trim()}` } })
@@ -579,23 +609,137 @@ async function loadImageModels() {
     }).map((model) => model.id)))
     els.model.innerHTML = [...new Set(['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', ...ids])].map((id) => `<option>${escapeHtml(id)}</option>`).join('') + '<option value="custom">Custom...</option>'
     if ([...els.model.options].some((option) => option.value === current)) els.model.value = current
+    rebuildCustomSelect(els.model)
     setStatus(`/v1/models OK · ${ids.length} image-like models`, 'ok')
     document.querySelector('#responsePreview').textContent = JSON.stringify(body, null, 2)
     switchTab('response')
     render()
   } catch (error) {
     setStatus(error.message || String(error), 'err')
+  } finally {
+    buttons.forEach((button) => setButtonBusy(button, false))
   }
 }
 
+function enhanceSelects() {
+  document.querySelectorAll('select').forEach((select) => {
+    select.classList.add('native-select')
+    const widget = document.createElement('div')
+    widget.className = 'select-shell'
+    widget.dataset.selectId = select.id
+    widget.innerHTML = `
+      <button class="select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span></span>${icons.chevronDown}
+      </button>
+      <div class="select-menu" role="listbox"></div>
+    `
+    select.insertAdjacentElement('afterend', widget)
+    const trigger = widget.querySelector('.select-trigger')
+    trigger.addEventListener('click', (event) => {
+      event.stopPropagation()
+      toggleCustomSelect(select)
+    })
+    trigger.addEventListener('keydown', (event) => handleSelectKeydown(event, select))
+    state.customSelects.set(select, widget)
+    rebuildCustomSelect(select)
+  })
+  document.addEventListener('click', closeCustomSelects)
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeCustomSelects()
+  })
+}
+
+function rebuildCustomSelect(select) {
+  const widget = state.customSelects.get(select)
+  if (!widget) return
+  const menu = widget.querySelector('.select-menu')
+  menu.innerHTML = ''
+  Array.from(select.options).forEach((option) => {
+    const item = document.createElement('button')
+    item.type = 'button'
+    item.className = 'select-option'
+    item.setAttribute('role', 'option')
+    item.dataset.value = option.value
+    item.textContent = option.textContent
+    item.addEventListener('click', (event) => {
+      event.stopPropagation()
+      chooseCustomOption(select, option.value)
+    })
+    menu.append(item)
+  })
+  syncCustomSelect(select)
+}
+
+function syncAllCustomSelects() {
+  state.customSelects.forEach((_, select) => syncCustomSelect(select))
+}
+
+function syncCustomSelect(select) {
+  const widget = state.customSelects.get(select)
+  if (!widget) return
+  const selected = select.selectedOptions[0] || select.options[0]
+  widget.querySelector('.select-trigger span').textContent = selected?.textContent || ''
+  widget.querySelectorAll('.select-option').forEach((option) => {
+    const active = option.dataset.value === select.value
+    option.classList.toggle('active', active)
+    option.setAttribute('aria-selected', active ? 'true' : 'false')
+  })
+}
+
+function chooseCustomOption(select, value) {
+  if (select.value !== value) {
+    select.value = value
+    select.dispatchEvent(new Event('input', { bubbles: true }))
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+  closeCustomSelects()
+  syncCustomSelect(select)
+}
+
+function toggleCustomSelect(select) {
+  const widget = state.customSelects.get(select)
+  if (!widget) return
+  const open = !widget.classList.contains('open')
+  closeCustomSelects()
+  widget.classList.toggle('open', open)
+  widget.querySelector('.select-trigger').setAttribute('aria-expanded', open ? 'true' : 'false')
+  if (open) {
+    const active = widget.querySelector('.select-option.active')
+    active?.scrollIntoView({ block: 'nearest' })
+  }
+}
+
+function closeCustomSelects() {
+  state.customSelects.forEach((widget) => {
+    widget.classList.remove('open')
+    widget.querySelector('.select-trigger').setAttribute('aria-expanded', 'false')
+  })
+}
+
+function handleSelectKeydown(event, select) {
+  if (!['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) return
+  event.preventDefault()
+  const options = Array.from(select.options)
+  const current = Math.max(0, options.findIndex((option) => option.value === select.value))
+  if (event.key === 'Enter' || event.key === ' ') return toggleCustomSelect(select)
+  const next = event.key === 'ArrowDown' ? Math.min(options.length - 1, current + 1) : Math.max(0, current - 1)
+  chooseCustomOption(select, options[next].value)
+}
+
 function bind() {
+  enhanceSelects()
   document.querySelectorAll('.mode').forEach((button) => button.addEventListener('click', () => {
     state.mode = button.dataset.mode
     document.querySelectorAll('.mode').forEach((item) => item.classList.toggle('active', item === button))
+    flashButton(button)
     render()
   }))
-  document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => switchTab(button.dataset.tab)))
-  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', () => navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent)))
+  document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
+  document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent)
+    flashButton(button)
+    setStatus('Copied', 'ok')
+  }))
   document.querySelector('#toggleConnectorBtn').addEventListener('click', () => {
     const card = document.querySelector('#connectorCard')
     card.classList.toggle('collapsed')
@@ -612,6 +756,8 @@ function bind() {
   })
   document.querySelector('#makeMaskBtn').addEventListener('click', generateMaskCanvas)
   document.querySelector('#downloadMaskBtn').addEventListener('click', async () => {
+    const button = document.querySelector('#downloadMaskBtn')
+    setButtonBusy(button, true, 'Exporting')
     try {
       const blob = await apiMaskBlob()
       const url = URL.createObjectURL(blob)
@@ -620,14 +766,18 @@ function bind() {
       a.download = 'api-mask.png'
       a.click()
       URL.revokeObjectURL(url)
+      flashButton(button)
+      setStatus('Mask downloaded', 'ok')
     } catch (error) {
       setStatus(error.message || String(error), 'err')
+    } finally {
+      setButtonBusy(button, false)
     }
   })
-  document.querySelector('#paintBtn').addEventListener('click', () => setMaskTool('paint'))
-  document.querySelector('#eraseBtn').addEventListener('click', () => setMaskTool('erase'))
-  document.querySelector('#fillBtn').addEventListener('click', fillMask)
-  document.querySelector('#clearMaskBtn').addEventListener('click', clearMask)
+  document.querySelector('#paintBtn').addEventListener('click', (event) => { setMaskTool('paint'); flashButton(event.currentTarget) })
+  document.querySelector('#eraseBtn').addEventListener('click', (event) => { setMaskTool('erase'); flashButton(event.currentTarget) })
+  document.querySelector('#fillBtn').addEventListener('click', (event) => { fillMask(); flashButton(event.currentTarget) })
+  document.querySelector('#clearMaskBtn').addEventListener('click', (event) => { clearMask(); flashButton(event.currentTarget) })
   els.brushSize.addEventListener('input', () => { els.brushNumber.value = els.brushSize.value })
   els.brushNumber.addEventListener('input', () => { els.brushSize.value = els.brushNumber.value })
   let drawing = false
@@ -635,13 +785,23 @@ function bind() {
   els.maskCanvas.addEventListener('pointermove', (event) => { if (drawing) paintMask(event) })
   els.maskCanvas.addEventListener('pointerup', () => { drawing = false })
   window.addEventListener('resize', syncCanvasSize)
-  document.querySelector('#validateBtn').addEventListener('click', () => validate(true))
+  document.querySelector('#validateBtn').addEventListener('click', (event) => { const result = validate(true); flashButton(event.currentTarget, result.ok ? 'done' : 'warn') })
   document.querySelector('#sendBtn').addEventListener('click', sendRequest)
   document.querySelector('#abortBtn').addEventListener('click', () => state.controller?.abort())
   document.querySelector('#testModelsBtn').addEventListener('click', loadImageModels)
   document.querySelector('#loadModelsBtn').addEventListener('click', loadImageModels)
   document.querySelector('#saveWorkspaceBtn').addEventListener('click', saveWorkspace)
-  document.querySelector('#clearRunsBtn').addEventListener('click', async () => { await clearRuns(); state.runs = []; renderHistory(); renderProofs([]); setStatus('History cleared', 'ok') })
+  document.querySelector('#clearRunsBtn').addEventListener('click', async (event) => {
+    const button = event.currentTarget
+    setButtonBusy(button, true, 'Clearing')
+    await clearRuns()
+    state.runs = []
+    renderHistory()
+    renderProofs([])
+    setButtonBusy(button, false)
+    flashButton(button)
+    setStatus('History cleared', 'ok')
+  })
   for (const element of document.querySelectorAll('input, select, textarea')) element.addEventListener('input', render)
 }
 
