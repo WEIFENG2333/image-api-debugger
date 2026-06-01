@@ -16,35 +16,44 @@ const state = {
   controller: null,
 }
 
+const icons = {
+  chevronDown: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+  chevronUp: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>',
+  send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>',
+  database: '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>',
+  save: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M7 3v6h9"/><path d="M7 21v-8h10v8"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M20 16v4H4v-4"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><rect x="4" y="4" width="11" height="11" rx="2"/></svg>',
+  mask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14c4-8 12-8 16 0"/><path d="M7 14c1.2 2 2.8 3 5 3s3.8-1 5-3"/><path d="M9 14h.01"/><path d="M15 14h.01"/></svg>',
+  download: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+}
+
 app.innerHTML = `
   <div class="app">
-    <header class="topbar">
-      <div class="brand"><span class="mark"></span><span>Image API Debugger</span></div>
-      <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Ready</span></div>
-      <div class="actions">
-        <button id="validateBtn" class="btn">Validate</button>
-        <button id="sendBtn" class="btn primary">Send request</button>
-        <button id="abortBtn" class="btn danger" disabled>Abort</button>
-        <button id="clearRunsBtn" class="btn">Clear history</button>
-      </div>
-    </header>
-
     <main class="layout">
       <section class="column">
+        <section class="identity">
+          <div class="wordmark"><span class="mark">id</span><span>Image API Debugger</span></div>
+          <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Ready</span></div>
+        </section>
+
         <section id="connectorCard" class="card collapsed">
           <div class="card-head">
             <h2>Connector</h2>
             <div class="head-actions">
-              <button id="testModelsBtn" class="btn">Models</button>
-              <button id="toggleConnectorBtn" class="btn">Expand</button>
+              <button id="testModelsBtn" class="icon-btn" title="Load models" aria-label="Load models">${icons.database}</button>
+              <button id="toggleConnectorBtn" class="icon-btn" title="Expand connector" aria-label="Expand connector">${icons.chevronDown}</button>
             </div>
           </div>
           <div class="card-body">
             <div class="field"><label>Base URL</label><input id="baseUrl" value="https://api.videocaptioner.cn"></div>
             <div class="field"><label>API key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
-            <div class="grid-2">
-              <button id="saveWorkspaceBtn" class="btn">Save workspace</button>
-              <button id="loadModelsBtn" class="btn">Load models</button>
+            <div class="icon-row">
+              <button id="saveWorkspaceBtn" class="btn subtle">${icons.save}<span>Save workspace</span></button>
+              <button id="loadModelsBtn" class="btn subtle">${icons.database}<span>Load models</span></button>
             </div>
           </div>
         </section>
@@ -97,7 +106,7 @@ app.innerHTML = `
           <div class="card-body">
             <label class="file-zone">
               <input id="sourceInput" type="file" accept="image/*" multiple>
-              <span class="file-button">Choose images<span>Edit/Mask uses these as multipart image files</span></span>
+              <span class="file-button">${icons.upload}<strong>Choose images</strong><span>Edit/Mask uses these as multipart image files</span></span>
             </label>
             <div id="fileList" class="file-list"></div>
           </div>
@@ -107,8 +116,8 @@ app.innerHTML = `
           <div class="card-head">
             <h2>Mask workflow</h2>
             <div class="head-actions">
-              <button id="makeMaskBtn" class="btn primary">Generate mask canvas</button>
-              <button id="downloadMaskBtn" class="btn">Download mask</button>
+              <button id="makeMaskBtn" class="btn primary">${icons.mask}<span>Canvas</span></button>
+              <button id="downloadMaskBtn" class="icon-btn" title="Download mask" aria-label="Download mask">${icons.download}</button>
             </div>
           </div>
           <div class="card-body">
@@ -128,7 +137,7 @@ app.innerHTML = `
             <div class="mask-stage"><div class="mask-stack"><img id="maskImage" alt=""><canvas id="maskCanvas"></canvas></div></div>
             <label class="file-zone compact">
               <input id="maskInput" type="file" accept="image/*">
-              <span class="file-button">Import existing mask<span>Optional. It will be resized to match the first source image.</span></span>
+              <span class="file-button">${icons.upload}<strong>Import existing mask</strong><span>Optional. It will be resized to match the first source image.</span></span>
             </label>
           </div>
         </section>
@@ -136,16 +145,28 @@ app.innerHTML = `
 
       <section class="column inspector-column">
         <section class="card inspector">
+          <div class="inspector-bar">
+            <div class="inspector-title">
+              <span>Inspect</span>
+              <small>request, response, proof</small>
+            </div>
+            <div class="command-bar">
+              <button id="validateBtn" class="icon-btn" title="Validate" aria-label="Validate">${icons.check}</button>
+              <button id="sendBtn" class="icon-btn primary" title="Send request" aria-label="Send request">${icons.send}</button>
+              <button id="abortBtn" class="icon-btn danger" title="Abort request" aria-label="Abort request" disabled>${icons.stop}</button>
+              <button id="clearRunsBtn" class="icon-btn" title="Clear history" aria-label="Clear history">${icons.trash}</button>
+            </div>
+          </div>
           <div class="tabs">
             <button class="tab active" data-tab="request">Request</button>
             <button class="tab" data-tab="response">Response</button>
             <button class="tab" data-tab="history">History</button>
             <button class="tab" data-tab="curl">cURL</button>
           </div>
-          <div id="requestTab" class="tab-body"><div class="copy-row"><button class="btn" data-copy="requestPreview">Copy JSON</button></div><pre id="requestPreview">{}</pre></div>
-          <div id="responseTab" class="tab-body hidden"><div class="copy-row"><button class="btn" data-copy="responsePreview">Copy response</button></div><pre id="responsePreview">{}</pre></div>
+          <div id="requestTab" class="tab-body"><div class="copy-row"><button class="icon-btn" title="Copy JSON" aria-label="Copy JSON" data-copy="requestPreview">${icons.copy}</button></div><pre id="requestPreview">{}</pre></div>
+          <div id="responseTab" class="tab-body hidden"><div class="copy-row"><button class="icon-btn" title="Copy response" aria-label="Copy response" data-copy="responsePreview">${icons.copy}</button></div><pre id="responsePreview">{}</pre></div>
           <div id="historyTab" class="tab-body hidden"><div id="historyList" class="history"></div></div>
-          <div id="curlTab" class="tab-body hidden"><div class="copy-row"><button class="btn" data-copy="curlPreview">Copy cURL</button></div><pre id="curlPreview"></pre></div>
+          <div id="curlTab" class="tab-body hidden"><div class="copy-row"><button class="icon-btn" title="Copy cURL" aria-label="Copy cURL" data-copy="curlPreview">${icons.copy}</button></div><pre id="curlPreview"></pre></div>
           <div id="proofs" class="proofs"></div>
         </section>
       </section>
@@ -578,7 +599,11 @@ function bind() {
   document.querySelector('#toggleConnectorBtn').addEventListener('click', () => {
     const card = document.querySelector('#connectorCard')
     card.classList.toggle('collapsed')
-    document.querySelector('#toggleConnectorBtn').textContent = card.classList.contains('collapsed') ? 'Expand' : 'Collapse'
+    const expanded = !card.classList.contains('collapsed')
+    const button = document.querySelector('#toggleConnectorBtn')
+    button.innerHTML = expanded ? icons.chevronUp : icons.chevronDown
+    button.title = expanded ? 'Collapse connector' : 'Expand connector'
+    button.setAttribute('aria-label', button.title)
   })
   document.querySelector('#sourceInput').addEventListener('change', (event) => loadSourceFiles(event.target.files))
   document.querySelector('#maskInput').addEventListener('change', (event) => {
