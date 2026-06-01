@@ -1,6 +1,6 @@
 import './styles.css'
 import { providerById, providers } from './providers/index.js'
-import { alphaMaskFromPaintCanvas, dataUrlFile, fileDataUrl, imageMeta, imageThumbnails, resizeMaskFile, responseImages } from './lib/images.js'
+import { alphaMaskFromPaintCanvas, blobImageSize, dataUrlFile, fileDataUrl, imageMeta, imageThumbnails, normalizeImageFile, resizeMaskFile, responseImages } from './lib/images.js'
 import { clearRuns, listRuns, loadConfig, saveConfig, saveRun } from './lib/storage.js'
 
 const app = document.querySelector('#app')
@@ -764,6 +764,21 @@ async function apiMaskBlob() {
   return alphaMaskFromPaintCanvas(els.maskCanvas, source.width, source.height)
 }
 
+async function requestAssetsForSend() {
+  if (state.mode !== 'mask') return { files: state.files, maskBlob: null }
+  const source = state.files[0]
+  if (!source) throw new Error('No source image.')
+  const normalizedFile = await normalizeImageFile(source.file, source.width, source.height, 'source-normalized.png')
+  const normalizedSource = { ...source, file: normalizedFile, name: 'source-normalized.png', bytes: normalizedFile.size }
+  const maskBlob = await apiMaskBlob()
+  const maskSize = await blobImageSize(maskBlob)
+  const imageSize = await blobImageSize(normalizedFile)
+  if (maskSize.width !== imageSize.width || maskSize.height !== imageSize.height) {
+    throw new Error(`Mask size ${maskSize.width}x${maskSize.height} does not match normalized image size ${imageSize.width}x${imageSize.height}.`)
+  }
+  return { files: [normalizedSource, ...state.files.slice(1)], maskBlob }
+}
+
 async function sendRequest() {
   const check = validate(true)
   const sendBtn = document.querySelector('#sendBtn')
@@ -788,14 +803,14 @@ async function sendRequest() {
   abortBtn.disabled = false
   setStatus('Sending request...', 'busy')
   try {
-    const maskBlob = state.mode === 'mask' ? await apiMaskBlob() : null
+    const assets = await requestAssetsForSend()
     const response = await provider.send({
       baseUrl: baseUrl(),
       apiKey: document.querySelector('#apiKey').value.trim(),
       state: stateForProvider(),
       payload: request.payload,
-      files: state.files,
-      maskBlob,
+      files: assets.files,
+      maskBlob: assets.maskBlob,
       signal: state.controller.signal,
     })
     const latency = Math.round(performance.now() - started)

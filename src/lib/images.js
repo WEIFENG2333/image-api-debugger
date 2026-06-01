@@ -57,6 +57,33 @@ export async function dataUrlFile(dataUrl, name = 'image.png') {
   return new File([blob], name, { type: blob.type || 'image/png' })
 }
 
+export async function normalizeImageFile(file, width, height, name = 'source.png') {
+  const url = URL.createObjectURL(file)
+  try {
+    const image = await loadImage(url)
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, width, height)
+    ctx.drawImage(image, 0, 0, width, height)
+    const blob = await canvasBlob(canvas, 'image/png')
+    return new File([blob], name, { type: 'image/png' })
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+export async function blobImageSize(blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const image = await loadImage(url)
+    return { width: image.naturalWidth, height: image.naturalHeight }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 export async function resizeMaskFile(file, width, height) {
   const url = URL.createObjectURL(file)
   try {
