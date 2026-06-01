@@ -142,12 +142,12 @@ app.innerHTML = `
           <div class="card-body"><textarea id="prompt">A clean ecommerce product photo of a ceramic coffee mug labeled LOCAL BREW, warm studio light, realistic product photography.</textarea></div>
         </section>
 
-        <section class="card">
-          <div class="card-head"><h2>Source images</h2><span id="sourceHint" class="label">Optional for generate</span></div>
+        <section id="sourceCard" class="card">
+          <div class="card-head"><h2>Source images</h2><span id="sourceHint" class="label">Required for edit</span></div>
           <div class="card-body">
             <label class="file-zone">
               <input id="sourceInput" type="file" accept="image/*" multiple>
-              <span class="file-button">${icons.upload}<strong>Choose images</strong><span>Edit/Mask uses these as multipart image files</span></span>
+              <span class="file-button">${icons.upload}<strong>Choose images</strong><span>Used only by Edit and Mask requests</span></span>
             </label>
             <div id="fileList" class="file-list"></div>
           </div>
@@ -268,7 +268,7 @@ const els = {
   backgroundCompressionRow: $('backgroundCompressionRow'), inputFidelityRow: $('inputFidelityRow'),
   providerStatus: $('providerStatus'), providerCurrentLabel: $('providerCurrentLabel'), providerMenu: $('providerMenu'),
   providerMenuBtn: $('providerMenuBtn'), connectorTitle: $('connectorTitle'), connectionDetail: $('connectionDetail'),
-  sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
+  sourceCard: $('sourceCard'), sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
   makeMaskBtn: $('makeMaskBtn'), downloadMaskBtn: $('downloadMaskBtn'), maskImage: $('maskImage'), maskCanvas: $('maskCanvas'),
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
   paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), clearMaskBtn: $('clearMaskBtn'),
@@ -613,11 +613,12 @@ function render() {
   els.inputFidelityRow.classList.toggle('hidden', provider.protocol === 'gemini')
   els.sizeLabel.textContent = provider.protocol === 'gemini' ? 'Aspect ratio' : 'Size'
   els.qualityLabel.textContent = provider.protocol === 'gemini' ? 'Image size' : 'Quality'
+  els.sourceCard.classList.toggle('hidden', state.mode === 'generate')
   els.maskCard.classList.toggle('show', state.mode === 'mask' && provider.supportsMask !== false)
   els.maskCard.classList.toggle('ready', state.maskReady || !!state.maskFile)
   els.makeMaskBtn.disabled = !state.files[0]
   els.endpointHint.textContent = `POST ${provider.endpoint(stateForProvider())}`
-  els.sourceHint.textContent = state.mode === 'generate' ? 'Optional for generate' : provider.protocol === 'gemini' ? 'Gemini image inputs become inline_data parts' : state.mode === 'mask' ? 'Upload source, generate mask, then paint' : 'Required for edit'
+  els.sourceHint.textContent = provider.protocol === 'gemini' ? 'Gemini edit sends images as inline_data parts' : state.mode === 'mask' ? 'Upload source, generate mask, then paint' : 'Required for edit'
   const warningItems = warnings()
   els.warnings.classList.toggle('show', warningItems.length > 0)
   els.warnings.innerHTML = warningItems.map((item) => `<div>${escapeHtml(item)}</div>`).join('')
