@@ -1,6 +1,6 @@
 import './styles.css'
 import { providerById, providers } from './providers/index.js'
-import { alphaMaskFromPaintCanvas, imageMeta, resizeMaskFile, responseImages } from './lib/images.js'
+import { alphaMaskFromPaintCanvas, imageMeta, imageThumbnails, resizeMaskFile, responseImages } from './lib/images.js'
 import { clearRuns, listRuns, loadConfig, saveConfig, saveRun } from './lib/storage.js'
 
 const app = document.querySelector('#app')
@@ -15,6 +15,7 @@ const state = {
   runs: [],
   controller: null,
   customSelects: new Map(),
+  rawResponseText: '{}',
 }
 
 const icons = {
@@ -311,6 +312,27 @@ function requestData() {
   }
 }
 
+function compactResponse(value) {
+  if (Array.isArray(value)) return value.map(compactResponse)
+  if (!value || typeof value !== 'object') return value
+  const out = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'b64_json' && typeof item === 'string') {
+      out[key] = `[base64 image omitted: ${item.length.toLocaleString()} chars]`
+    } else {
+      out[key] = compactResponse(item)
+    }
+  }
+  return out
+}
+
+function setResponseBody(body, options = {}) {
+  const copyFull = options.copyFull !== false
+  const compact = compactResponse(body)
+  els.responsePreview.textContent = JSON.stringify(compact, null, 2)
+  state.rawResponseText = JSON.stringify(copyFull ? body : compact, null, 2)
+}
+
 function maskSummary() {
   const source = state.files[0]
   if (!source) return { required: true, status: 'missing source image' }
@@ -551,20 +573,21 @@ async function sendRequest() {
       signal: state.controller.signal,
     })
     const latency = Math.round(performance.now() - started)
-    document.querySelector('#responsePreview').textContent = JSON.stringify(response.body, null, 2)
     const images = responseImages(response.body, els.outputFormat.value)
+    setResponseBody(response.body)
     renderProofs(images)
-    const run = await saveRun({ ok: true, status: response.status, latency, request, response: response.body, images })
-    state.runs = [run, ...state.runs].slice(0, 80)
+    const thumbnails = await imageThumbnails(images)
+    const run = await saveRun({ ok: true, status: response.status, latency, request, response: compactResponse(response.body), images, thumbnails })
+    state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(`OK ${response.status} · ${(latency / 1000).toFixed(1)}s`, 'ok')
     switchTab('response')
   } catch (error) {
     const latency = Math.round(performance.now() - started)
     const body = error.body || { error: { message: error.message || String(error) } }
-    document.querySelector('#responsePreview').textContent = JSON.stringify(body, null, 2)
-    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: body, images: [] })
-    state.runs = [run, ...state.runs].slice(0, 80)
+    setResponseBody(body)
+    const run = await saveRun({ ok: false, status: error.status || 0, latency, request, response: compactResponse(body), images: [], thumbnails: [] })
+    state.runs = [run, ...state.runs].slice(0, 40)
     renderHistory()
     setStatus(error.message || 'Request failed', 'err')
     switchTab('response')
@@ -599,7 +622,8 @@ function renderProofs(images) {
 
 function renderHistory() {
   els.historyList.innerHTML = state.runs.map((run) => {
-    const thumb = run.images?.[0] ? `<img src="${run.images[0]}" alt="history result">` : `<span class="history-placeholder">${run.ok ? 'OK' : 'ERR'}</span>`
+    const thumbUrl = run.thumbnails?.[0] || run.images?.[0] || ''
+    const thumb = thumbUrl ? `<img loading="lazy" src="${thumbUrl}" alt="history result">` : `<span class="history-placeholder">${run.ok ? 'OK' : 'ERR'}</span>`
     const more = run.images?.length > 1 ? `<em>+${run.images.length - 1}</em>` : ''
     return `<button class="history-item ${run.ok ? 'ok' : 'err'}" data-id="${run.id}">
       <span class="history-thumb">${thumb}${more}</span>
@@ -616,7 +640,7 @@ function renderHistory() {
 function restoreRun(id) {
   const run = state.runs.find((item) => item.id === id)
   if (!run) return
-  document.querySelector('#responsePreview').textContent = JSON.stringify(run.response, null, 2)
+  setResponseBody(run.response, { copyFull: false })
   renderProofs(run.images || [])
   switchTab('response')
   setStatus('History restored. Re-upload source images before resending edit/mask requests.', 'ok')
@@ -713,7 +737,7 @@ async function loadImageModels() {
     if ([...els.model.options].some((option) => option.value === current)) els.model.value = current
     rebuildCustomSelect(els.model)
     setStatus(`/v1/models OK · ${ids.length} image-like models`, 'ok')
-    document.querySelector('#responsePreview').textContent = JSON.stringify(body, null, 2)
+    setResponseBody(body)
     switchTab('response')
     render()
   } catch (error) {
@@ -721,6 +745,24 @@ async function loadImageModels() {
   } finally {
     buttons.forEach((button) => setButtonBusy(button, false))
   }
+}
+
+async function hydrateHistoryThumbnails() {
+  let changed = false
+  const updates = state.runs.slice(0, 12).map(async (run) => {
+    if (run.thumbnails?.length || !run.images?.length) return run
+    const thumbnails = await imageThumbnails(run.images)
+    if (!thumbnails.some(Boolean)) return run
+    changed = true
+    const updated = { ...run, thumbnails }
+    await saveRun(updated)
+    return updated
+  })
+  const updated = await Promise.all(updates)
+  updated.forEach((run, index) => {
+    state.runs[index] = run
+  })
+  if (changed) renderHistory()
 }
 
 function enhanceSelects() {
@@ -839,7 +881,8 @@ function bind() {
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
   document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
     event.stopPropagation()
-    await navigator.clipboard.writeText(document.querySelector(`#${button.dataset.copy}`).textContent)
+    const text = button.dataset.copy === 'responsePreview' ? state.rawResponseText : document.querySelector(`#${button.dataset.copy}`).textContent
+    await navigator.clipboard.writeText(text)
     flashButton(button)
     setStatus('Copied', 'ok')
   }))
@@ -945,5 +988,6 @@ loadWorkspace()
 bind()
 state.runs = await listRuns()
 renderHistory()
+hydrateHistoryThumbnails().catch(() => {})
 if (state.runs[0]?.images?.length) renderProofs(state.runs[0].images)
 render()

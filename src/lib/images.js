@@ -34,6 +34,14 @@ export function canvasBlob(canvas, type = 'image/png', quality) {
   return new Promise((resolve) => canvas.toBlob(resolve, type, quality))
 }
 
+export function canvasDataUrl(canvas, type = 'image/webp', quality = .76) {
+  try {
+    return canvas.toDataURL(type, quality)
+  } catch {
+    return canvas.toDataURL('image/png')
+  }
+}
+
 export async function resizeMaskFile(file, width, height) {
   const url = URL.createObjectURL(file)
   try {
@@ -78,4 +86,27 @@ export function responseImages(body, outputFormat = 'png') {
     if (item.url) return item.url
     return ''
   }).filter(Boolean)
+}
+
+export async function imageThumbnail(url, maxSize = 180) {
+  const image = await loadImage(url)
+  const scale = Math.min(1, maxSize / Math.max(image.naturalWidth || maxSize, image.naturalHeight || maxSize))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || maxSize) * scale))
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || maxSize) * scale))
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#fff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
+  return canvasDataUrl(canvas)
+}
+
+export async function imageThumbnails(urls, maxSize = 180) {
+  return Promise.all(urls.map(async (url) => {
+    try {
+      return await imageThumbnail(url, maxSize)
+    } catch {
+      return ''
+    }
+  }))
 }

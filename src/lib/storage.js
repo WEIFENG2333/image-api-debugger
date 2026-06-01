@@ -35,7 +35,7 @@ export async function saveRun(run) {
   return record
 }
 
-export async function listRuns(limit = 80) {
+export async function listRuns(limit = 40) {
   const db = await openDb()
   const runs = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
