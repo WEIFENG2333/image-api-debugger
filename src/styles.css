@@ -356,25 +356,70 @@ svg {
   padding: 11px;
 }
 
-.provider-card .card-body {
-  padding: 0;
+.provider-strip {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px 7px 11px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
 }
 
-.provider-switch {
+.provider-current {
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: 2px;
+}
+
+.provider-current span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.provider-current strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.provider-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.provider-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px;
+  background: #fffefb;
+  box-shadow: 0 18px 44px rgba(20,20,19,.14);
 }
 
 .provider-choice {
   position: relative;
   display: grid;
-  gap: 3px;
-  min-height: 58px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 34px 10px 11px;
-  background: #fff;
+  gap: 2px;
+  min-height: 46px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 8px 30px 8px 9px;
+  background: transparent;
   color: var(--text);
   text-align: left;
   transition: border-color .14s ease, background-color .14s ease, transform .14s ease;
@@ -383,8 +428,8 @@ svg {
 .provider-choice::after {
   content: "";
   position: absolute;
-  top: 14px;
-  right: 12px;
+  top: 13px;
+  right: 10px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -396,24 +441,23 @@ svg {
 .provider-choice[data-status="busy"]::after { background: var(--blue); }
 
 .provider-choice:hover {
-  border-color: var(--line-strong);
-  background: #fffdf8;
+  border-color: var(--line);
+  background: #fbf7ef;
 }
 
 .provider-choice.active {
-  border-color: var(--accent);
-  background: #fff8f2;
-  box-shadow: inset 3px 0 0 var(--accent);
+  border-color: #ead0c4;
+  background: #fff3ec;
 }
 
 .provider-choice strong {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.1;
 }
 
 .provider-choice span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .connection-pill {

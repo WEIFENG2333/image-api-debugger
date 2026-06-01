@@ -66,9 +66,16 @@ app.innerHTML = `
           <div class="status"><span id="statusDot" class="dot"></span><span id="statusText">Ready</span></div>
         </section>
 
-        <section class="card provider-card">
-          <div class="card-head"><h2>Provider</h2><span id="providerStatus" class="connection-pill idle">Not tested</span></div>
-          <div class="provider-switch">
+        <section class="provider-strip">
+          <div class="provider-current">
+            <span>Provider</span>
+            <strong id="providerCurrentLabel">GPT / OpenAI Images</strong>
+          </div>
+          <div class="provider-actions">
+            <span id="providerStatus" class="connection-pill idle">Not tested</span>
+            <button id="providerMenuBtn" class="icon-btn" title="Switch provider" aria-label="Switch provider">${icons.chevronDown}</button>
+          </div>
+          <div id="providerMenu" class="provider-menu hidden">
             ${providers.map((p) => `<button class="provider-choice ${p.id === 'openai-images' ? 'active' : ''}" data-provider="${p.id}"><strong>${p.label}</strong><span>${p.protocol === 'gemini' ? 'Native generateContent' : 'Images API compatible'}</span></button>`).join('')}
           </div>
           <select id="provider" class="hidden">${providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}</select>
@@ -259,7 +266,8 @@ const els = {
   prompt: $('prompt'), warnings: $('warnings'), endpointHint: $('endpointHint'), estimate: $('estimate'), sourceHint: $('sourceHint'),
   sizeLabel: $('sizeLabel'), qualityLabel: $('qualityLabel'), formatCountRow: $('formatCountRow'),
   backgroundCompressionRow: $('backgroundCompressionRow'), inputFidelityRow: $('inputFidelityRow'),
-  providerStatus: $('providerStatus'), connectorTitle: $('connectorTitle'), connectionDetail: $('connectionDetail'),
+  providerStatus: $('providerStatus'), providerCurrentLabel: $('providerCurrentLabel'), providerMenu: $('providerMenu'),
+  providerMenuBtn: $('providerMenuBtn'), connectorTitle: $('connectorTitle'), connectionDetail: $('connectionDetail'),
   sourceInput: $('sourceInput'), fileList: $('fileList'), maskCard: $('maskCard'), maskInput: $('maskInput'),
   makeMaskBtn: $('makeMaskBtn'), downloadMaskBtn: $('downloadMaskBtn'), maskImage: $('maskImage'), maskCanvas: $('maskCanvas'),
   sourceMetric: $('sourceMetric'), maskMetric: $('maskMetric'), apiMaskMetric: $('apiMaskMetric'),
@@ -336,6 +344,7 @@ function renderConnectionStatus() {
   const label = { idle: 'Not tested', busy: 'Checking', ok: 'Connected', err: 'Failed' }[connection.status] || 'Not tested'
   els.providerStatus.textContent = label
   els.providerStatus.className = `connection-pill ${connection.status || 'idle'}`
+  els.providerCurrentLabel.textContent = provider.label
   els.connectionDetail.textContent = connection.message || 'Connection has not been tested.'
   els.connectorTitle.textContent = `${provider.label} connection`
 }
@@ -619,11 +628,22 @@ function switchProvider(providerId) {
   els.provider.value = providerId
   els.provider.dataset.appliedProvider = ''
   applyConnection(providerId)
+  closeProviderMenu()
   const provider = currentProvider()
   state.mode = provider.supportsMask === false && state.mode === 'mask' ? 'edit' : state.mode
   applyMode(state.mode)
   render()
   scheduleWorkspaceSave()
+}
+
+function toggleProviderMenu() {
+  els.providerMenu.classList.toggle('hidden')
+  els.providerMenuBtn.classList.toggle('active', !els.providerMenu.classList.contains('hidden'))
+}
+
+function closeProviderMenu() {
+  els.providerMenu.classList.add('hidden')
+  els.providerMenuBtn.classList.remove('active')
 }
 
 function buildCurl() {
@@ -1390,6 +1410,10 @@ function bind() {
     switchProvider(button.dataset.provider)
     flashButton(button)
   }))
+  els.providerMenuBtn.addEventListener('click', (event) => {
+    event.stopPropagation()
+    toggleProviderMenu()
+  })
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
   document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
     event.stopPropagation()
@@ -1494,6 +1518,10 @@ function bind() {
   })
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !els.lightbox.classList.contains('hidden')) closeLightbox()
+    if (event.key === 'Escape') closeProviderMenu()
+  })
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.provider-strip')) closeProviderMenu()
   })
   for (const element of document.querySelectorAll('input, select, textarea')) {
     element.addEventListener('input', () => {
