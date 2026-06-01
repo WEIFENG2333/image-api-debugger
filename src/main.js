@@ -76,7 +76,7 @@ app.innerHTML = `
             <button id="providerMenuBtn" class="icon-btn" title="Switch provider" aria-label="Switch provider">${icons.chevronDown}</button>
           </div>
           <div id="providerMenu" class="provider-menu hidden">
-            ${providers.map((p) => `<button class="provider-choice ${p.id === 'openai-images' ? 'active' : ''}" data-provider="${p.id}"><strong>${p.label}</strong><span>${p.protocol === 'gemini' ? 'Native generateContent' : 'Images API compatible'}</span></button>`).join('')}
+            ${providers.map((p) => `<button class="provider-choice ${p.id === 'openai-images' ? 'active' : ''}" data-provider="${p.id}"><strong>${p.label}</strong><span>${p.description || (p.protocol === 'gemini' ? 'Native generateContent' : 'Images API compatible')}</span></button>`).join('')}
           </div>
           <select id="provider" class="hidden">${providers.map((p) => `<option value="${p.id}">${p.label}</option>`).join('')}</select>
         </section>
@@ -123,7 +123,7 @@ app.innerHTML = `
             </div>
             <div id="formatCountRow" class="grid-2">
               <div class="field"><label>Format</label><select id="outputFormat"><option>png</option><option>jpeg</option><option>webp</option></select></div>
-              <div class="field"><label>n</label><input id="count" type="number" min="1" max="4" value="1"></div>
+              <div id="countField" class="field"><label>n</label><input id="count" type="number" min="1" max="4" value="1"></div>
             </div>
             <div id="backgroundCompressionRow" class="grid-2">
               <div class="field"><label>Background</label><select id="background"><option>auto</option><option>opaque</option><option>transparent</option></select></div>
@@ -264,7 +264,7 @@ const els = {
   quality: $('quality'), outputFormat: $('outputFormat'), count: $('count'), background: $('background'),
   outputCompression: $('outputCompression'), inputFidelity: $('inputFidelity'), extraJson: $('extraJson'),
   prompt: $('prompt'), warnings: $('warnings'), endpointHint: $('endpointHint'), estimate: $('estimate'), sourceHint: $('sourceHint'),
-  sizeLabel: $('sizeLabel'), qualityLabel: $('qualityLabel'), formatCountRow: $('formatCountRow'),
+  sizeLabel: $('sizeLabel'), qualityLabel: $('qualityLabel'), formatCountRow: $('formatCountRow'), countField: $('countField'),
   backgroundCompressionRow: $('backgroundCompressionRow'), inputFidelityRow: $('inputFidelityRow'),
   providerStatus: $('providerStatus'), providerCurrentLabel: $('providerCurrentLabel'), providerMenu: $('providerMenu'),
   providerMenuBtn: $('providerMenuBtn'), connectorTitle: $('connectorTitle'), connectionDetail: $('connectionDetail'),
@@ -609,6 +609,8 @@ function render() {
   els.customModelWrap.classList.toggle('hidden', els.model.value !== 'custom')
   els.customSizeWrap.classList.toggle('hidden', provider.protocol === 'gemini' || els.size.value !== 'custom')
   els.formatCountRow.classList.toggle('hidden', provider.protocol === 'gemini')
+  els.countField.classList.toggle('hidden', provider.supportsCount === false)
+  els.formatCountRow.classList.toggle('single-field', provider.supportsCount === false)
   els.backgroundCompressionRow.classList.toggle('hidden', provider.protocol === 'gemini')
   els.inputFidelityRow.classList.toggle('hidden', provider.protocol === 'gemini')
   els.sizeLabel.textContent = provider.protocol === 'gemini' ? 'Aspect ratio' : 'Size'

@@ -1,14 +1,16 @@
-export const openAiImagesProvider = {
-  id: 'openai-images',
-  label: 'GPT / OpenAI Images',
-  protocol: 'openai-images',
-  defaultBaseUrl: 'https://api.videocaptioner.cn',
+import { parseOpenAIImagesResponse } from './openaiImages.js'
+
+export const codexCliProxyProvider = {
+  id: 'codex-cliproxy',
+  label: 'Codex / CLIProxyAPI',
+  protocol: 'codex-cliproxy',
+  defaultBaseUrl: 'http://127.0.0.1:18317',
   defaultModel: 'gpt-image-2',
   supportsSend: true,
   supportsMask: true,
-  supportsCount: true,
-  description: 'Images API compatible',
-  modelOptions: ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'doubao-seedream-4-0-250828', 'custom'],
+  supportsCount: false,
+  description: 'Codex OAuth via CLIProxyAPI',
+  modelOptions: ['gpt-image-2', 'custom'],
   endpoint(state) {
     return state.mode === 'generate' ? '/v1/images/generations' : '/v1/images/edits'
   },
@@ -18,7 +20,6 @@ export const openAiImagesProvider = {
       prompt: state.prompt,
       size: state.size,
       quality: state.quality,
-      n: state.count,
       output_format: state.outputFormat,
       background: state.background,
     }
@@ -56,26 +57,4 @@ export const openAiImagesProvider = {
     })
     return parseOpenAIImagesResponse(response)
   },
-}
-
-export async function parseOpenAIImagesResponse(response) {
-  const text = await response.text()
-  let body
-  try {
-    body = JSON.parse(text)
-  } catch {
-    body = { raw: text }
-  }
-  if (!response.ok) {
-    const error = new Error(body?.error?.message || `HTTP ${response.status}`)
-    error.status = response.status
-    error.body = body
-    error.headers = responseHeaders(response)
-    throw error
-  }
-  return { status: response.status, body, headers: responseHeaders(response) }
-}
-
-function responseHeaders(response) {
-  return Object.fromEntries(Array.from(response.headers.entries()).filter(([key]) => !['authorization', 'x-goog-api-key'].includes(key.toLowerCase())))
 }
