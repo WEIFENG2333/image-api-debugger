@@ -100,6 +100,12 @@ svg {
   transition: transform .14s ease, border-color .14s ease, background-color .14s ease, color .14s ease, opacity .14s ease;
 }
 
+.btn.compact {
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .btn:hover:not(:disabled) {
   border-color: var(--line-strong);
   background: #fff;
@@ -777,7 +783,9 @@ input:focus, select:focus, textarea:focus {
 .command-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .tabs {
@@ -808,6 +816,18 @@ input:focus, select:focus, textarea:focus {
   min-height: 0;
   overflow: auto;
   padding: 12px;
+}
+
+.panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 34px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 680;
 }
 
 .response-body {
@@ -884,13 +904,6 @@ input:focus, select:focus, textarea:focus {
 .result-image:hover span {
   opacity: 1;
   transform: translateY(0);
-}
-
-.copy-row {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 8px;
 }
 
 pre {

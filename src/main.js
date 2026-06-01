@@ -169,9 +169,9 @@ app.innerHTML = `
               <small>request, response, proof</small>
             </div>
             <div class="command-bar">
-              <button id="validateBtn" class="icon-btn" title="Validate" aria-label="Validate">${icons.check}</button>
-              <button id="sendBtn" class="icon-btn primary" title="Send request" aria-label="Send request">${icons.send}</button>
-              <button id="abortBtn" class="icon-btn danger" title="Abort request" aria-label="Abort request" disabled>${icons.stop}</button>
+              <button id="validateBtn" class="btn subtle" title="Validate request">${icons.check}<span>Validate</span></button>
+              <button id="sendBtn" class="btn primary" title="Send request">${icons.send}<span>Send</span></button>
+              <button id="abortBtn" class="btn danger" title="Abort request" disabled>${icons.stop}<span>Abort</span></button>
               <button id="clearRunsBtn" class="icon-btn" title="Clear history" aria-label="Clear history">${icons.trash}</button>
             </div>
           </div>
@@ -181,19 +181,25 @@ app.innerHTML = `
             <button class="tab" data-tab="history">History</button>
             <button class="tab" data-tab="curl">cURL</button>
           </div>
-          <div id="requestTab" class="tab-body"><div class="copy-row"><button class="icon-btn" title="Copy JSON" aria-label="Copy JSON" data-copy="requestPreview">${icons.copy}</button></div><pre id="requestPreview">{}</pre></div>
+          <div id="requestTab" class="tab-body">
+            <div class="panel-toolbar"><span>Request JSON</span><button class="btn subtle compact" title="Copy JSON" data-copy="requestPreview">${icons.copy}<span>Copy</span></button></div>
+            <pre id="requestPreview">{}</pre>
+          </div>
           <div id="responseTab" class="tab-body response-body hidden">
             <div id="resultStage" class="result-stage empty">
               <div>No image yet</div>
             </div>
             <div id="proofs" class="proofs"></div>
             <details class="raw-panel">
-              <summary><span>Raw response</span><button class="icon-btn" title="Copy response" aria-label="Copy response" data-copy="responsePreview">${icons.copy}</button></summary>
+              <summary><span>Raw response</span><button class="btn subtle compact" title="Copy response" data-copy="responsePreview">${icons.copy}<span>Copy</span></button></summary>
               <pre id="responsePreview">{}</pre>
             </details>
           </div>
           <div id="historyTab" class="tab-body hidden"><div id="historyList" class="history"></div></div>
-          <div id="curlTab" class="tab-body hidden"><div class="copy-row"><button class="icon-btn" title="Copy cURL" aria-label="Copy cURL" data-copy="curlPreview">${icons.copy}</button></div><pre id="curlPreview"></pre></div>
+          <div id="curlTab" class="tab-body hidden">
+            <div class="panel-toolbar"><span>cURL</span><button class="btn subtle compact" title="Copy cURL" data-copy="curlPreview">${icons.copy}<span>Copy</span></button></div>
+            <pre id="curlPreview"></pre>
+          </div>
         </section>
       </section>
     </main>
