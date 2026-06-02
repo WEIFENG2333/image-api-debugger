@@ -1005,8 +1005,11 @@ async function sendRequest() {
   setButtonBusy(sendBtn, true, 'Sending')
   abortBtn.disabled = false
   setStatus('Sending request...', 'busy')
+  switchTab('response')
+  renderStageState('busy', 'Preparing request', 'Normalizing files, mask, and payload before sending.')
   try {
     const assets = await requestAssetsForSend()
+    renderStageState('busy', 'Generating image', `${request.method} ${new URL(request.url).pathname}`)
     const response = await provider.send({
       baseUrl: baseUrl(),
       apiKey: document.querySelector('#apiKey').value.trim(),
@@ -1031,7 +1034,6 @@ async function sendRequest() {
     renderHistory()
     setStatus(`OK ${response.status} · ${(latency / 1000).toFixed(1)}s`, 'ok')
     setConnectionStatus('ok', `Connected · last request OK ${response.status} · ${(latency / 1000).toFixed(1)}s`)
-    switchTab('response')
   } catch (error) {
     const latency = Math.round(performance.now() - started)
     const body = error.body || { error: { message: error.message || String(error) } }
@@ -1046,8 +1048,8 @@ async function sendRequest() {
     renderHistory()
     setStatus(classified.message, 'err')
     setConnectionStatus('err', classified.diagnosis ? `${classified.message} ${classified.diagnosis}` : classified.message)
+    renderStageState('err', 'Request failed', classified.message)
     showToast(classified.title, classified.message, 'err')
-    switchTab('response')
   } finally {
     state.controller = null
     setButtonBusy(sendBtn, false)
@@ -1076,6 +1078,18 @@ function renderProofs(images, meta = []) {
       <span>#${index + 1} · ${escapeHtml(meta[index]?.aspectRatio || '-')}</span>
     </button>
   `).join('')
+}
+
+function renderStageState(kind, title, detail = '') {
+  els.resultStage.className = `result-stage stage-${kind}`
+  els.resultStage.innerHTML = `
+    <div class="stage-state">
+      <span class="stage-spinner" aria-hidden="true"></span>
+      <strong>${escapeHtml(title)}</strong>
+      <span>${escapeHtml(detail)}</span>
+    </div>
+  `
+  els.proofs.innerHTML = ''
 }
 
 function imageMetaBadge(meta) {
