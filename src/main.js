@@ -758,18 +758,17 @@ function setCost(cost, options = {}) {
   const label = cost?.value == null ? 'usage not returned' : cost.label
   els.estimate.textContent = label
   const usage = cost?.usage || null
-  const usageRows = usage
+  const usageSummary = usage
     ? Object.entries(usage)
       .filter(([, value]) => Number(value) > 0)
-      .map(([key, value]) => `<span>${escapeHtml(humanizeUsageKey(key))}</span><strong>${Number(value).toLocaleString()}</strong>`)
-      .join('')
+      .map(([key, value]) => `${humanizeUsageKey(key)} ${Number(value).toLocaleString()}`)
+      .join(' · ')
     : ''
   els.costPanel.className = `cost-panel ${cost?.value == null ? 'empty' : 'priced'}`
   els.costPanel.innerHTML = `
     <span>Actual cost</span>
     <strong>${escapeHtml(label)}</strong>
-    <small>${usageRows ? 'Calculated from returned usage tokens.' : 'The API response did not include usage tokens, so no real price can be calculated.'}</small>
-    ${usageRows ? `<div class="usage-grid">${usageRows}</div>` : ''}
+    <small>${usageSummary ? escapeHtml(usageSummary) : 'Usage not returned by API.'}</small>
   `
 }
 
@@ -1107,6 +1106,7 @@ function renderProofs(images, meta = []) {
     els.resultStage.className = 'result-stage empty'
     els.resultStage.innerHTML = '<div>No image yet</div>'
     els.proofs.innerHTML = ''
+    els.proofs.classList.add('hidden')
     return
   }
   els.resultStage.className = `result-stage count-${Math.min(images.length, 4)}`
@@ -1117,7 +1117,8 @@ function renderProofs(images, meta = []) {
       <span>${icons.zoom}</span>
     </button>
   `).join('')
-  els.proofs.innerHTML = images.map((url, index) => `
+  els.proofs.classList.toggle('hidden', images.length <= 1)
+  els.proofs.innerHTML = images.length <= 1 ? '' : images.map((url, index) => `
     <button class="proof ${index === 0 ? 'active' : ''}" data-preview-index="${index}" title="Open result ${index + 1}">
       <img src="${url}" alt="result thumbnail ${index + 1}">
       <span>#${index + 1} · ${escapeHtml(meta[index]?.aspectRatio || '-')}</span>
@@ -1135,6 +1136,7 @@ function renderStageState(kind, title, detail = '') {
     </div>
   `
   els.proofs.innerHTML = ''
+  els.proofs.classList.add('hidden')
 }
 
 function imageMetaBadge(meta) {
@@ -1658,5 +1660,10 @@ bind()
 state.runs = await listRuns()
 renderHistory()
 hydrateHistoryThumbnails().catch(() => {})
-if (state.runs[0]?.images?.length) renderProofs(state.runs[0].images)
+if (state.runs[0]) {
+  setResponseBody(state.runs[0].response || {}, { copyFull: false })
+  setResponseHeaders(state.runs[0].headers || {})
+  setCost(state.runs[0].cost || null)
+  renderProofs(state.runs[0].images || [], state.runs[0].imageMeta || [])
+}
 render()
