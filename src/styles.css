@@ -1071,6 +1071,17 @@ input:focus, select:focus, textarea:focus {
   overflow: hidden;
 }
 
+.response-body.empty-response {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.response-body.empty-response .cost-panel,
+.response-body.empty-response .raw-panel,
+.response-body.empty-response .headers-panel,
+.response-body.empty-response .proofs {
+  display: none;
+}
+
 .result-stage {
   display: grid;
   gap: 8px;
@@ -1127,8 +1138,39 @@ input:focus, select:focus, textarea:focus {
 .result-stage.empty {
   place-items: center;
   color: var(--muted);
+}
+
+.empty-preview {
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  width: min(320px, 100%);
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-preview span {
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 49%, rgba(20,20,19,.08) 50%, transparent 51%),
+    linear-gradient(0deg, transparent 49%, rgba(20,20,19,.08) 50%, transparent 51%),
+    #fffefb;
+}
+
+.empty-preview strong {
+  color: var(--text);
   font-family: var(--serif);
   font-size: 20px;
+  font-weight: 600;
+}
+
+.empty-preview small {
+  max-width: 260px;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .result-stage.stage-busy,

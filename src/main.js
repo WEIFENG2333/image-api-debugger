@@ -213,9 +213,13 @@ app.innerHTML = `
             <div class="panel-toolbar"><span>Request JSON</span><button class="btn subtle compact" title="Copy JSON" data-copy="requestPreview">${icons.copy}<span>Copy</span></button></div>
             <pre id="requestPreview">{}</pre>
           </div>
-          <div id="responseTab" class="tab-body response-body hidden">
+          <div id="responseTab" class="tab-body response-body empty-response hidden">
             <div id="resultStage" class="result-stage empty">
-              <div>No image yet</div>
+              <div class="empty-preview">
+                <span></span>
+                <strong>Ready</strong>
+                <small>Image, cost, and payload appear here.</small>
+              </div>
             </div>
             <div id="costPanel" class="cost-panel empty">
               <span>Actual cost</span>
@@ -508,6 +512,7 @@ function setResponseHeaders(headers = {}) {
 }
 
 function clearResponseInspectors(message = 'Waiting for response...') {
+  els.responsePreview.closest('.response-body')?.classList.remove('empty-response')
   els.responsePreview.textContent = message
   els.headersPreview.textContent = '{}'
   state.rawResponseText = message
@@ -1104,11 +1109,19 @@ async function sendRequest() {
 function renderProofs(images, meta = []) {
   if (!images.length) {
     els.resultStage.className = 'result-stage empty'
-    els.resultStage.innerHTML = '<div>No image yet</div>'
+    els.resultStage.innerHTML = `
+      <div class="empty-preview">
+        <span></span>
+        <strong>Ready</strong>
+        <small>Image, cost, and payload appear here.</small>
+      </div>
+    `
+    els.responsePreview.closest('.response-body')?.classList.add('empty-response')
     els.proofs.innerHTML = ''
     els.proofs.classList.add('hidden')
     return
   }
+  els.responsePreview.closest('.response-body')?.classList.remove('empty-response')
   els.resultStage.className = `result-stage count-${Math.min(images.length, 4)}`
   els.resultStage.innerHTML = images.map((url, index) => `
     <button class="result-image" data-preview-index="${index}" title="Open large preview">
@@ -1127,6 +1140,7 @@ function renderProofs(images, meta = []) {
 }
 
 function renderStageState(kind, title, detail = '') {
+  els.responsePreview.closest('.response-body')?.classList.remove('empty-response')
   els.resultStage.className = `result-stage stage-${kind}`
   els.resultStage.innerHTML = `
     <div class="stage-state">
