@@ -217,13 +217,18 @@ app.innerHTML = `
             <div id="resultStage" class="result-stage empty">
               <div>No image yet</div>
             </div>
+            <div id="costPanel" class="cost-panel empty">
+              <span>Actual cost</span>
+              <strong>Waiting for response</strong>
+              <small>Usage tokens will appear here when the API returns them.</small>
+            </div>
             <div id="proofs" class="proofs"></div>
-            <details class="raw-panel">
-              <summary><span>Raw response</span><button class="btn subtle compact" title="Copy response" data-copy="responsePreview">${icons.copy}<span>Copy</span></button></summary>
+            <details class="raw-panel" open>
+              <summary><span>Raw response</span><span class="summary-actions"><em>compact JSON</em><button class="btn subtle compact" title="Copy full response" data-copy="responsePreview">${icons.copy}<span>Copy full</span></button></span></summary>
               <pre id="responsePreview">{}</pre>
             </details>
             <details class="raw-panel headers-panel">
-              <summary><span>Response headers</span><button class="btn subtle compact" title="Copy headers" data-copy="headersPreview">${icons.copy}<span>Copy</span></button></summary>
+              <summary><span>Response headers</span><span class="summary-actions"><em>metadata</em><button class="btn subtle compact" title="Copy headers" data-copy="headersPreview">${icons.copy}<span>Copy</span></button></span></summary>
               <pre id="headersPreview">{}</pre>
             </details>
           </div>
@@ -274,7 +279,7 @@ const els = {
   paintBtn: $('paintBtn'), eraseBtn: $('eraseBtn'), clearMaskBtn: $('clearMaskBtn'),
   brushSize: $('brushSize'), brushNumber: $('brushNumber'), brushDownBtn: $('brushDownBtn'), brushUpBtn: $('brushUpBtn'),
   requestPreview: $('requestPreview'), responsePreview: $('responsePreview'), headersPreview: $('headersPreview'),
-  curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'),
+  curlPreview: $('curlPreview'), historyList: $('historyList'), proofs: $('proofs'), resultStage: $('resultStage'), costPanel: $('costPanel'),
   lightbox: $('lightbox'), lightboxImage: $('lightboxImage'), lightboxMeta: $('lightboxMeta'), lightboxViewport: $('lightboxViewport'),
   toast: $('toast'), toastTitle: $('toastTitle'), toastMessage: $('toastMessage'), toastClose: $('toastClose'),
 }
@@ -500,6 +505,14 @@ function setResponseHeaders(headers = {}) {
   const compact = headers && Object.keys(headers).length ? headers : {}
   els.headersPreview.textContent = JSON.stringify(compact, null, 2)
   state.rawHeadersText = JSON.stringify(compact, null, 2)
+}
+
+function clearResponseInspectors(message = 'Waiting for response...') {
+  els.responsePreview.textContent = message
+  els.headersPreview.textContent = '{}'
+  state.rawResponseText = message
+  state.rawHeadersText = '{}'
+  setCost(null, { waiting: true })
 }
 
 function maskSummary() {
@@ -731,8 +744,39 @@ function usageCost(body, model) {
   }
 }
 
-function setCost(cost) {
-  els.estimate.textContent = cost?.value == null ? 'usage not returned' : cost.label
+function setCost(cost, options = {}) {
+  if (options.waiting) {
+    els.estimate.textContent = `$${estimateCost().toFixed(3)} est.`
+    els.costPanel.className = 'cost-panel empty'
+    els.costPanel.innerHTML = `
+      <span>Actual cost</span>
+      <strong>Waiting for response</strong>
+      <small>Usage tokens will appear here when the API returns them.</small>
+    `
+    return
+  }
+  const label = cost?.value == null ? 'usage not returned' : cost.label
+  els.estimate.textContent = label
+  const usage = cost?.usage || null
+  const usageRows = usage
+    ? Object.entries(usage)
+      .filter(([, value]) => Number(value) > 0)
+      .map(([key, value]) => `<span>${escapeHtml(humanizeUsageKey(key))}</span><strong>${Number(value).toLocaleString()}</strong>`)
+      .join('')
+    : ''
+  els.costPanel.className = `cost-panel ${cost?.value == null ? 'empty' : 'priced'}`
+  els.costPanel.innerHTML = `
+    <span>Actual cost</span>
+    <strong>${escapeHtml(label)}</strong>
+    <small>${usageRows ? 'Calculated from returned usage tokens.' : 'The API response did not include usage tokens, so no real price can be calculated.'}</small>
+    ${usageRows ? `<div class="usage-grid">${usageRows}</div>` : ''}
+  `
+}
+
+function humanizeUsageKey(key) {
+  return key
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, (char) => char.toUpperCase())
 }
 
 async function captureWorkspaceSnapshot() {
@@ -1006,6 +1050,7 @@ async function sendRequest() {
   abortBtn.disabled = false
   setStatus('Sending request...', 'busy')
   switchTab('response')
+  clearResponseInspectors('Request is in flight. Raw response will appear after the server replies.')
   renderStageState('busy', 'Preparing request', 'Normalizing files, mask, and payload before sending.')
   try {
     const assets = await requestAssetsForSend()
@@ -1477,6 +1522,7 @@ function bind() {
   document.querySelectorAll('.tab').forEach((button) => button.addEventListener('click', () => { switchTab(button.dataset.tab); flashButton(button) }))
   document.querySelectorAll('[data-copy]').forEach((button) => button.addEventListener('click', async (event) => {
     event.stopPropagation()
+    if (button.closest('summary')) event.preventDefault()
     const text = button.dataset.copy === 'responsePreview'
       ? state.rawResponseText
       : button.dataset.copy === 'headersPreview'

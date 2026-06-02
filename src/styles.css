@@ -1065,7 +1065,7 @@ input:focus, select:focus, textarea:focus {
 
 .response-body {
   display: grid;
-  grid-template-rows: minmax(420px, 1fr) auto auto auto;
+  grid-template-rows: minmax(280px, 1fr) auto auto minmax(0, 210px) minmax(0, 150px);
   gap: 10px;
   height: 100%;
   overflow: hidden;
@@ -1075,11 +1075,80 @@ input:focus, select:focus, textarea:focus {
   display: grid;
   gap: 8px;
   min-height: 360px;
+  max-height: 100%;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px;
   background: transparent;
+}
+
+.cost-panel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 10px;
+  min-height: 58px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: #fbfaf6;
+}
+
+.cost-panel > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.cost-panel > strong {
+  justify-self: end;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.cost-panel > small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cost-panel.priced {
+  border-color: rgba(40,116,90,.24);
+  background: #f3faf6;
+}
+
+.usage-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 0;
+  margin-top: 4px;
+}
+
+.usage-grid span,
+.usage-grid strong {
+  min-height: 24px;
+  border: 1px solid rgba(20,20,19,.08);
+  background: rgba(255,255,255,.58);
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.usage-grid span {
+  border-right: 0;
+  border-radius: 6px 0 0 6px;
+  color: var(--muted);
+}
+
+.usage-grid strong {
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  font-family: var(--mono);
+  text-align: right;
 }
 
 .result-stage.empty {
@@ -1253,12 +1322,27 @@ pre {
   list-style: none;
 }
 
+.summary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.summary-actions em {
+  color: #90887d;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 620;
+}
+
 .raw-panel summary::-webkit-details-marker {
   display: none;
 }
 
 .raw-panel pre {
   min-height: 0;
+  height: 100%;
   max-height: none;
   border: 0;
   border-top: 1px solid var(--line);
