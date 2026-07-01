@@ -102,7 +102,14 @@ export async function resizeMaskFile(file, width, height) {
 }
 
 export async function alphaMaskFromPaintCanvas(canvas, width, height) {
-  const source = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+  let sourceCanvas = canvas
+  if (canvas.width !== width || canvas.height !== height) {
+    sourceCanvas = document.createElement('canvas')
+    sourceCanvas.width = width
+    sourceCanvas.height = height
+    sourceCanvas.getContext('2d').drawImage(canvas, 0, 0, width, height)
+  }
+  const source = sourceCanvas.getContext('2d').getImageData(0, 0, width, height)
   const out = document.createElement('canvas')
   out.width = width
   out.height = height

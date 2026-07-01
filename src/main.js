@@ -1009,11 +1009,13 @@ function updateMaskMetrics() {
   document.querySelector('#apiMaskMetric').textContent = `${els.maskCanvas.width}x${els.maskCanvas.height} PNG`
 }
 
-async function apiMaskBlob() {
+async function apiMaskBlob(targetWidth, targetHeight) {
   const source = state.files[0]
   if (!source) throw new Error('No source image.')
-  if (state.maskFile) return resizeMaskFile(state.maskFile, source.width, source.height)
-  return alphaMaskFromPaintCanvas(els.maskCanvas, source.width, source.height)
+  const width = targetWidth || source.width
+  const height = targetHeight || source.height
+  if (state.maskFile) return resizeMaskFile(state.maskFile, width, height)
+  return alphaMaskFromPaintCanvas(els.maskCanvas, width, height)
 }
 
 async function requestAssetsForSend() {
@@ -1022,9 +1024,9 @@ async function requestAssetsForSend() {
   if (!source) throw new Error('No source image.')
   const normalizedFile = await normalizeImageFile(source.file, source.width, source.height, 'source-normalized.png')
   const normalizedSource = { ...source, file: normalizedFile, name: 'source-normalized.png', bytes: normalizedFile.size }
-  const maskBlob = await apiMaskBlob()
-  const maskSize = await blobImageSize(maskBlob)
   const imageSize = await blobImageSize(normalizedFile)
+  const maskBlob = await apiMaskBlob(imageSize.width, imageSize.height)
+  const maskSize = await blobImageSize(maskBlob)
   if (maskSize.width !== imageSize.width || maskSize.height !== imageSize.height) {
     throw new Error(`Mask size ${maskSize.width}x${maskSize.height} does not match normalized image size ${imageSize.width}x${imageSize.height}.`)
   }
