@@ -7,7 +7,7 @@ A browser debugger for image generation and editing APIs. It shows the exact req
 Open the hosted app:
 
 ```text
-https://phistory.cc/
+https://weifeng2333.github.io/image-api-debugger/
 ```
 
 Or run locally:
