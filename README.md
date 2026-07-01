@@ -7,7 +7,7 @@ A browser debugger for image generation and editing APIs. It shows the exact req
 Open the hosted app:
 
 ```text
-https://bkfeng.top/image-api-debugger/
+https://phistory.cc/
 ```
 
 Or run locally:
