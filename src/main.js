@@ -560,7 +560,6 @@ function validate(show = true) {
   if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
   const url = baseUrl()
   if (!url) addError('baseUrl', 'Base URL is empty.')
-  else if (provider.protocol === 'openai-images' && !/\/v1$/i.test(url)) addError('baseUrl', 'OpenAI Images Base URL must include /v1, for example http://127.0.0.1:8317/v1.')
   if (!els.apiKey.value.trim()) addError('apiKey', 'API key is empty.')
   if (state.mode !== 'generate' && !state.files.length) addError('sourceInput', 'No source images selected.')
   if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) addError('maskCanvas', 'Mask mode requires a generated or imported mask.')

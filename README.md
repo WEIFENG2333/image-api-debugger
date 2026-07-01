@@ -41,7 +41,7 @@ Supported workflows:
 - Generate: `POST {Base URL}/images/generations`
 - Edit and Mask: `POST {Base URL}/images/edits`
 
-The app does not auto-append `/v1`. Enter the full OpenAI-compatible base URL yourself.
+The app uses Base URL exactly as entered. It does not auto-append or validate path prefixes.
 
 ### Gemini
 
