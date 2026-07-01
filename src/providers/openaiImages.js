@@ -2,7 +2,7 @@ export const openAiImagesProvider = {
   id: 'openai-images',
   label: 'GPT / OpenAI Images',
   protocol: 'openai-images',
-  defaultBaseUrl: 'https://api.videocaptioner.cn',
+  defaultBaseUrl: 'https://api.videocaptioner.cn/v1',
   defaultModel: 'gpt-image-2',
   supportsSend: true,
   supportsMask: true,
@@ -10,7 +10,7 @@ export const openAiImagesProvider = {
   description: 'Images API compatible',
   modelOptions: ['gpt-image-2', 'gpt-image-1.5', 'gpt-image-1', 'gpt-image-1-mini', 'doubao-seedream-4-0-250828', 'custom'],
   endpoint(state) {
-    return state.mode === 'generate' ? '/v1/images/generations' : '/v1/images/edits'
+    return state.mode === 'generate' ? '/images/generations' : '/images/edits'
   },
   payload(state) {
     const data = {

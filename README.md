@@ -31,15 +31,15 @@ Use this for OpenAI-compatible image APIs, including CLIProxyAPI.
 
 ```text
 Provider: GPT / OpenAI Images
-Base URL: https://api.example.com
+Base URL: https://api.example.com/v1
 API key: your-api-key
 Model: gpt-image-2
 ```
 
 Supported workflows:
 
-- Generate: `POST /v1/images/generations`
-- Edit and Mask: `POST /v1/images/edits`
+- Generate: `POST {Base URL}/images/generations`
+- Edit and Mask: `POST {Base URL}/images/edits`
 
 ### Gemini
 
@@ -60,7 +60,7 @@ In the app:
 
 ```text
 Provider: GPT / OpenAI Images
-Base URL: http://127.0.0.1:8317
+Base URL: http://127.0.0.1:8317/v1
 API key: the key in CLIProxyAPI api-keys
 Model: gpt-image-2
 ```
@@ -127,7 +127,7 @@ codex-header-defaults:
 Then use this app with:
 
 ```text
-Base URL: http://127.0.0.1:8317
+Base URL: http://127.0.0.1:8317/v1
 API key: local-dev-key
 ```
 

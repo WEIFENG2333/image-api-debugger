@@ -90,7 +90,7 @@ app.innerHTML = `
             </div>
           </div>
           <div class="card-body">
-            <div class="field"><label>Base URL</label><input id="baseUrl" value="https://api.videocaptioner.cn"></div>
+            <div class="field"><label>Base URL</label><input id="baseUrl" value="https://api.videocaptioner.cn/v1"></div>
             <div class="field"><label>API key</label><input id="apiKey" type="password" placeholder="sk-..."></div>
             <div id="connectionDetail" class="connection-detail">Connection has not been tested.</div>
             <div class="icon-row">
@@ -138,7 +138,7 @@ app.innerHTML = `
 
       <section class="column">
         <section class="card">
-          <div class="card-head"><h2>Prompt</h2><span id="endpointHint" class="label">POST /v1/images/generations</span></div>
+          <div class="card-head"><h2>Prompt</h2><span id="endpointHint" class="label">POST /images/generations</span></div>
           <div class="card-body"><textarea id="prompt">A clean ecommerce product photo of a ceramic coffee mug labeled LOCAL BREW, warm studio light, realistic product photography.</textarea></div>
         </section>
 
@@ -456,7 +456,20 @@ function currentProvider() {
 
 function baseUrl() {
   saveCurrentConnection()
-  return els.baseUrl.value.trim().replace(/\/+$/, '')
+  const provider = currentProvider()
+  const current = els.baseUrl.value.trim().replace(/\/+$/, '')
+  const normalized = normalizeBaseUrl(current, provider)
+  if (normalized !== current) {
+    els.baseUrl.value = normalized
+    saveCurrentConnection()
+  }
+  return normalized
+}
+
+function normalizeBaseUrl(url, provider = currentProvider()) {
+  if (!url) return ''
+  if (provider.protocol !== 'openai-images') return url
+  return /\/v1$/i.test(url) ? url : `${url}/v1`
 }
 
 function requestData() {
@@ -1345,7 +1358,7 @@ async function loadImageModels() {
   buttons.forEach((button) => setButtonBusy(button, true, 'Loading'))
   try {
     const provider = currentProvider()
-    const modelsPath = provider.protocol === 'gemini' ? '/v1beta/models' : '/v1/models'
+    const modelsPath = provider.protocol === 'gemini' ? '/v1beta/models' : '/models'
     setConnectionStatus('busy', `Checking ${modelsPath}...`)
     setStatus(`Loading ${modelsPath}...`, 'busy')
     const headers = provider.protocol === 'gemini'
