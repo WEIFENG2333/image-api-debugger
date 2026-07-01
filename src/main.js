@@ -474,9 +474,9 @@ function requestData() {
     files: state.mode === 'generate' ? [] : files.map((file, index) => ({
       field: isGemini ? 'inline_data' : 'image',
       index,
-      name: file.name,
-      width: file.width,
-      height: file.height,
+      name: state.mode === 'mask' && !isGemini ? 'source-normalized.png' : file.name,
+      width: state.mode === 'mask' && !isGemini ? apiEditInputSize(file).width : file.width,
+      height: state.mode === 'mask' && !isGemini ? apiEditInputSize(file).height : file.height,
       bytes: file.bytes,
     })),
     mask: state.mode === 'mask' && !isGemini ? maskSummary() : null,
@@ -523,13 +523,29 @@ function clearResponseInspectors(message = 'Waiting for response...') {
 function maskSummary() {
   const source = state.files[0]
   if (!source) return { required: true, status: 'missing source image' }
+  const apiSize = apiEditInputSize(source)
   return {
     required: true,
     sourceSize: `${source.width}x${source.height}`,
-    apiMaskSize: `${source.width}x${source.height}`,
+    apiMaskSize: `${apiSize.width}x${apiSize.height}`,
+    apiInputResized: apiSize.width !== source.width || apiSize.height !== source.height,
     uploadedMask: state.maskFile?.name || null,
     generatedFromCanvas: !state.maskFile,
     transparentPixelsAreEditRegion: true,
+  }
+}
+
+function apiEditInputSize(source) {
+  const maxEdge = 1536
+  const width = Number(source?.width || 0)
+  const height = Number(source?.height || 0)
+  if (!width || !height) return { width: 0, height: 0 }
+  const longest = Math.max(width, height)
+  if (longest <= maxEdge) return { width, height }
+  const scale = maxEdge / longest
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
   }
 }
 
@@ -996,17 +1012,18 @@ function fillMask() {
 
 function updateMaskMetrics() {
   const source = state.files[0]
+  const apiSize = source ? apiEditInputSize(source) : null
   document.querySelector('#sourceMetric').textContent = source ? `${source.width}x${source.height}` : '-'
   if (!state.maskReady) {
     document.querySelector('#maskMetric').textContent = '-'
-    document.querySelector('#apiMaskMetric').textContent = source ? `${source.width}x${source.height} target` : '-'
+    document.querySelector('#apiMaskMetric').textContent = apiSize ? `${apiSize.width}x${apiSize.height} target` : '-'
     return
   }
   const data = els.maskCanvas.getContext('2d').getImageData(0, 0, els.maskCanvas.width, els.maskCanvas.height).data
   let painted = 0
   for (let i = 3; i < data.length; i += 4) if (data[i] > 0) painted++
   document.querySelector('#maskMetric').textContent = `${els.maskCanvas.width}x${els.maskCanvas.height} · ${painted} px`
-  document.querySelector('#apiMaskMetric').textContent = `${els.maskCanvas.width}x${els.maskCanvas.height} PNG`
+  document.querySelector('#apiMaskMetric').textContent = apiSize ? `${apiSize.width}x${apiSize.height} PNG` : '-'
 }
 
 async function apiMaskBlob(targetWidth, targetHeight) {
@@ -1022,8 +1039,9 @@ async function requestAssetsForSend() {
   if (state.mode !== 'mask') return { files: state.files, maskBlob: null }
   const source = state.files[0]
   if (!source) throw new Error('No source image.')
-  const normalizedFile = await normalizeImageFile(source.file, source.width, source.height, 'source-normalized.png')
-  const normalizedSource = { ...source, file: normalizedFile, name: 'source-normalized.png', bytes: normalizedFile.size }
+  const apiSize = apiEditInputSize(source)
+  const normalizedFile = await normalizeImageFile(source.file, apiSize.width, apiSize.height, 'source-normalized.png')
+  const normalizedSource = { ...source, file: normalizedFile, name: 'source-normalized.png', width: apiSize.width, height: apiSize.height, bytes: normalizedFile.size }
   const imageSize = await blobImageSize(normalizedFile)
   const maskBlob = await apiMaskBlob(imageSize.width, imageSize.height)
   const maskSize = await blobImageSize(maskBlob)
