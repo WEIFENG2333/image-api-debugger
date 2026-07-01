@@ -456,20 +456,7 @@ function currentProvider() {
 
 function baseUrl() {
   saveCurrentConnection()
-  const provider = currentProvider()
-  const current = els.baseUrl.value.trim().replace(/\/+$/, '')
-  const normalized = normalizeBaseUrl(current, provider)
-  if (normalized !== current) {
-    els.baseUrl.value = normalized
-    saveCurrentConnection()
-  }
-  return normalized
-}
-
-function normalizeBaseUrl(url, provider = currentProvider()) {
-  if (!url) return ''
-  if (provider.protocol !== 'openai-images') return url
-  return /\/v1$/i.test(url) ? url : `${url}/v1`
+  return els.baseUrl.value.trim().replace(/\/+$/, '')
 }
 
 function requestData() {
@@ -571,7 +558,9 @@ function validate(show = true) {
   if (provider.protocol === 'gemini' && state.mode === 'mask') addError('maskCanvas', 'Gemini native does not accept alpha mask files. Use Edit with a semantic prompt.')
   if (provider.protocol !== 'gemini' && activeModel() === 'gpt-image-2' && els.background.value === 'transparent') addError('background', 'gpt-image-2 does not support background=transparent.')
   if (provider.protocol !== 'gemini' && els.background.value === 'transparent' && els.outputFormat.value === 'jpeg') addError('outputFormat', 'transparent background requires png or webp.')
-  if (!baseUrl()) addError('baseUrl', 'Base URL is empty.')
+  const url = baseUrl()
+  if (!url) addError('baseUrl', 'Base URL is empty.')
+  else if (provider.protocol === 'openai-images' && !/\/v1$/i.test(url)) addError('baseUrl', 'OpenAI Images Base URL must include /v1, for example http://127.0.0.1:8317/v1.')
   if (!els.apiKey.value.trim()) addError('apiKey', 'API key is empty.')
   if (state.mode !== 'generate' && !state.files.length) addError('sourceInput', 'No source images selected.')
   if (state.mode === 'mask' && state.files.length && !state.maskReady && !state.maskFile) addError('maskCanvas', 'Mask mode requires a generated or imported mask.')

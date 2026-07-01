@@ -41,6 +41,8 @@ Supported workflows:
 - Generate: `POST {Base URL}/images/generations`
 - Edit and Mask: `POST {Base URL}/images/edits`
 
+The app does not auto-append `/v1`. Enter the full OpenAI-compatible base URL yourself.
+
 ### Gemini
 
 Use this for Gemini native `generateContent` image models.
